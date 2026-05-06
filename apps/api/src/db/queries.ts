@@ -713,6 +713,126 @@ export function getStaffByEmail(email: string):
     | undefined;
 }
 
+export type DuplicateGroup = {
+  child_first_name: string;
+  child_last_name: string;
+  child_dob: string;
+  patients: Array<{
+    id: string;
+    created_at: string;
+    account_id: string | null;
+    account_email: string | null;
+    submission_count: number;
+  }>;
+};
+
+export function findDuplicatePatients(practiceId: string): DuplicateGroup[] {
+  const groups = db
+    .prepare(
+      `select lower(trim(child_first_name)) as fn, lower(trim(child_last_name)) as ln, child_dob
+       from patients
+       where practice_id = ?
+       group by fn, ln, child_dob
+       having count(*) > 1`,
+    )
+    .all(practiceId) as Array<{ fn: string; ln: string; child_dob: string }>;
+
+  return groups.map(({ fn, ln, child_dob }) => {
+    const rows = db
+      .prepare(
+        `select p.id, p.child_first_name, p.child_last_name, p.child_dob, p.created_at, p.account_id,
+                pa.email as account_email,
+                (select count(*) from submissions s where s.patient_id = p.id) as submission_count
+         from patients p
+         left join patient_accounts pa on pa.id = p.account_id
+         where p.practice_id = ?
+           and lower(trim(p.child_first_name)) = ?
+           and lower(trim(p.child_last_name)) = ?
+           and p.child_dob = ?
+         order by p.created_at asc`,
+      )
+      .all(practiceId, fn, ln, child_dob) as Array<{
+        id: string;
+        child_first_name: string;
+        child_last_name: string;
+        child_dob: string;
+        created_at: string;
+        account_id: string | null;
+        account_email: string | null;
+        submission_count: number;
+      }>;
+
+    const first = rows[0];
+    return {
+      child_first_name: first.child_first_name,
+      child_last_name: first.child_last_name,
+      child_dob: first.child_dob,
+      patients: rows.map((r) => ({
+        id: r.id,
+        created_at: r.created_at,
+        account_id: r.account_id,
+        account_email: r.account_email,
+        submission_count: r.submission_count,
+      })),
+    };
+  });
+}
+
+export function mergePatients(primaryId: string, duplicateId: string, practiceId: string): void {
+  const primary = db
+    .prepare('select id, account_id from patients where id = ? and practice_id = ?')
+    .get(primaryId, practiceId) as { id: string; account_id: string | null } | undefined;
+  const duplicate = db
+    .prepare('select id, account_id from patients where id = ? and practice_id = ?')
+    .get(duplicateId, practiceId) as { id: string; account_id: string | null } | undefined;
+
+  if (!primary || !duplicate) throw new Error('Patient not found');
+
+  const now = nowIso();
+
+  db.transaction(() => {
+    // Inherit account_id if primary has none
+    if (!primary.account_id && duplicate.account_id) {
+      db.prepare('update patients set account_id = ?, updated_at = ? where id = ?').run(
+        duplicate.account_id, now, primaryId,
+      );
+    }
+
+    // Re-point simple multi-row tables
+    for (const table of ['allergies', 'medications', 'family_history', 'submissions', 'form_assignments', 'assignment_bundles']) {
+      db.prepare(`update ${table} set patient_id = ? where patient_id = ?`).run(primaryId, duplicateId);
+    }
+
+    // guardians: unique(patient_id, guardian_index) — offset duplicate's indices
+    const maxGuardian = (db
+      .prepare('select coalesce(max(guardian_index), -1) as m from guardians where patient_id = ?')
+      .get(primaryId) as { m: number }).m;
+    db.prepare(
+      'update guardians set patient_id = ?, guardian_index = guardian_index + ? where patient_id = ?',
+    ).run(primaryId, maxGuardian + 1, duplicateId);
+
+    // insurance_policies: unique(patient_id, policy_order) — offset duplicate's order
+    const maxPolicy = (db
+      .prepare('select coalesce(max(policy_order), -1) as m from insurance_policies where patient_id = ?')
+      .get(primaryId) as { m: number }).m;
+    db.prepare(
+      'update insurance_policies set patient_id = ?, policy_order = policy_order + ? where patient_id = ?',
+    ).run(primaryId, maxPolicy + 1, duplicateId);
+
+    // Unique-per-patient tables: keep primary's row; only re-point if primary has none
+    for (const table of ['pharmacies', 'medical_history', 'concerns', 'immunizations', 'social_history', 'provider_preferences', 'consents_signatures']) {
+      const primaryHas = db.prepare(`select id from ${table} where patient_id = ?`).get(primaryId);
+      if (primaryHas) {
+        db.prepare(`delete from ${table} where patient_id = ?`).run(duplicateId);
+      } else {
+        db.prepare(`update ${table} set patient_id = ? where patient_id = ?`).run(primaryId, duplicateId);
+      }
+    }
+
+    db.prepare('delete from patients where id = ?').run(duplicateId);
+  })();
+}
+
 // Expire in_progress submissions older than `olderThanHours` hours.
 // Returns the number of rows marked expired.
 export function expireStaleSubmissions(olderThanHours = 48): number {
