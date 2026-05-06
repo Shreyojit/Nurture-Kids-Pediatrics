@@ -38,3 +38,9 @@ yarn.lock
 # OS
 Thumbs.db
 
+
+
+
+*.png
+.jpg
+.playwright-mcp
