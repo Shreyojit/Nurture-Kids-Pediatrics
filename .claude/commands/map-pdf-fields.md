@@ -8,7 +8,8 @@ argument-hint: <path-to-pdf> [template_id] [template_key] [template_name]
 You are helping map interactive fields for a new PDF form into this project's `templateSeedData.json` seed file.
 
 The project renders PDFs in `apps/web/src/pages/PdfFillPage.tsx` using CSS overlays.
-Fields are stored in `apps/api/src/seeds/templateSeedData.json` and seeded on every API start.
+Fields are stored in `apps/api/src/seeds/templateSeedData.json` and seeded on first boot only
+(the DB is the source of truth after initial seed — see `seedTemplates.ts`).
 
 Coordinate system: **PDF native (bottom-left origin, y increases upward)**.
 Page size is typically 612 × 792 pts (US Letter).
@@ -27,7 +28,8 @@ From `$ARGUMENTS` extract:
 
 ## Step 2 — Extract PDF structure with pdfminer
 
-Run this script and carefully study every page's output:
+Run this script and carefully study **every page's** output. Do not skip the last page — ASQ forms
+have a 7th "Information Summary" page that is easy to miss.
 
 ```python
 python3 << 'EOF'
@@ -72,7 +74,14 @@ for page_num, page in enumerate(pages, 1):
             if abs(y1-y0) < 2 and (x1-x0) > 10:
                 print(f"  x0={x0:.1f} x1={x1:.1f} y={y0:.1f}  (width {x1-x0:.1f})")
 
-    print("\n--- RECTANGLES (likely text-box outlines) ---")
+    print("\n--- VERTICAL LINES (likely grid column dividers) ---")
+    for el in page:
+        if isinstance(el, (LTLine, LTCurve)):
+            x0,y0,x1,y1 = el.bbox
+            if abs(x1-x0) < 2 and (y1-y0) > 10:
+                print(f"  x={x0:.1f} y0={y0:.1f} y1={y1:.1f}  (height {y1-y0:.1f})")
+
+    print("\n--- RECTANGLES (likely text-box outlines or grid borders) ---")
     for el in page:
         if isinstance(el, LTRect):
             x0,y0,x1,y1 = el.bbox
@@ -96,11 +105,28 @@ From the pdfminer output, build a mental (or written) map of each page:
 - Radio field position: `x = circle_x0`, `y = circle_y0`, `w = circle_width`, `h = circle_height`.
 
 ### Text input fields
-- Horizontal underlines → single-line text input. Position the field so its bottom edge sits at the underline y.  Use `w = line_width`, `h = 14`.
+- Horizontal underlines → single-line text input. Position the field so its bottom edge sits at the underline y. Use `w = line_width`, `h = 14`.
 - Rectangles with significant area → multiline textarea. Use the rect bbox directly: `x=x0, y=y0, w=x1-x0, h=y1-y0`.
+- **No rectangle visible but space clearly exists** (e.g. a "notes" section next to bullet points, or a textarea below a question label): estimate y from surrounding text element positions and available vertical space. Place at bottom of available space.
 
 ### Checkboxes
 - Small square rectangles (w≈h≈12–16 pts) not part of a radio cluster → `field_type = "checkbox"`.
+
+### Grid cells (tables drawn with lines, not rectangles)
+Some grids are drawn entirely with `LTLine`/`LTCurve` elements rather than `LTRect`. pdfminer
+will show an outer `LTRect` for the border plus a set of vertical lines for column dividers, but
+no per-cell rectangles.
+
+**How to compute cell positions from line data:**
+1. Find the outer bounding rectangle (LTRect spanning the whole grid).
+2. Find the vertical lines — their x-coordinates are the column dividers.
+   Column left edges = `[outer_x0, vline1_x, vline2_x, ...]`; right edges = `[vline1_x, vline2_x, ..., outer_x1]`.
+3. Determine row boundaries from the row-label text y-positions and the grid height.
+   Each row spans evenly from the bottom of the header row to the grid bottom.
+4. Cell position: `x = col_left_edge`, `y = row_bottom_edge`, `w = col_width`, `h = row_height`.
+
+**Critical:** use the exact line coordinates from pdfminer — do not estimate from text positions.
+Off-by-6 pts in y shifts cells visibly toward the top or bottom of the row.
 
 ---
 
@@ -149,6 +175,7 @@ For radio groups, also add a **group record**:
 - Questions: `<section>_q<n>_<option>` e.g. `comm_q1_yes`, `comm_q1_som`, `comm_q1_no`
 - Totals: `<section>_total`
 - Notes/free text: `<section>_notes_<n>` or descriptive name
+- Page-prefixed names for summary pages: `p7_score_comm`, `p7_opt_comm_q1`, etc.
 - Groups: `<section>_q<n>`
 
 ---
@@ -188,14 +215,24 @@ And copy both the source and acroform PDFs into `apps/api/src/seeds/pdfs/`.
 
 ## Step 6 — Verify visually
 
-1. Restart the API: `npm run dev --workspace=apps/api`
-2. Log in as staff, create an assignment for the new template
-3. Open the fill URL in the browser using Playwright
-4. Take screenshots of each page and inspect:
-   - Radio buttons must sit directly ON the printed circles
-   - Text fields must align with underlines or box outlines
-   - No fields should float outside the page area
-5. If anything is misaligned, recalculate from pdfminer coordinates and update the JSON
+1. Restart the API: `lsof -ti:4000 | xargs kill -9 2>/dev/null; sleep 1 && npm run dev --workspace=apps/api`
+2. Log in as staff, create an assignment for the new template.
+3. Open the fill URL in the browser using Playwright.
+4. Take screenshots of each page. To zoom in on a specific area without clipping the right
+   column, use CSS transform (not browser `zoom`):
+   ```js
+   document.body.style.transform = 'scale(2.5)';
+   document.body.style.transformOrigin = '50% 30%'; // adjust % to centre on the area
+   document.body.style.position = 'absolute';
+   ```
+   Reset with `document.body.style.transform = ''` etc. before navigating away.
+5. Inspect each section:
+   - Radio buttons must sit directly ON the printed circles.
+   - Text fields must align with underlines or box outlines.
+   - Grid cells must be contained within the printed grid lines — not shifted up or down.
+   - No fields should float outside the page area.
+6. If anything is misaligned, re-run the targeted pdfminer query for that element type
+   (lines, circles, rects) and recalculate from the raw coordinates.
 
 ---
 
@@ -206,18 +243,33 @@ git add apps/api/src/seeds/templateSeedData.json \
         apps/api/src/seeds/pdfs/ \
         apps/api/src/db/seedTemplates.ts
 git commit -m "Add <TEMPLATE_NAME> PDF fields and seed data"
+git push origin main
 ```
 
 ---
 
-## Key formulas to remember
+## Key formulas
 
 | What you want | Formula |
 |---|---|
 | Radio field over a circle | `x = circle_x0`, `y = circle_y0`, `w = circle_width`, `h = circle_height` |
 | Text field on an underline | `x = line_x0`, `y = line_y` (bottom), `w = line_width`, `h = 14` |
 | Textarea inside a rect | `x = rect_x0`, `y = rect_y0`, `w = rect_width`, `h = rect_height` |
+| Grid cell (lines grid) | `x = col_left_line_x`, `y = row_bottom_line_y`, `w = col_width`, `h = row_height` |
 | CSS top in PdfFillPage | `pageH - (field.y + field.height) * scale` |
 | CSS left | `field.x * scale` |
 
 Scale = `760 / page1_width_in_pts` (760 is TARGET_WIDTH in PdfFillPage.tsx).
+
+---
+
+## ASQ-specific notes
+
+ASQ questionnaires always have **7 pages**. The last page is the "Information Summary" and
+contains: a header row, a score-to-chart grid (5 sections × 13 score positions = 65 radio
+circles), overall YES/NO questions (Q1–9 split left/right columns), follow-up action checkboxes,
+and an optional item-response grid (5 rows × 6 cols drawn with lines). Map all of them.
+
+The optional grid columns have a label column on the left (row names) and 6 data columns.
+Vertical lines give exact column boundaries; row heights are equal and derivable from the
+grid outer rect height minus the header row height, divided by 5.
