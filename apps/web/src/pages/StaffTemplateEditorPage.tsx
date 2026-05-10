@@ -880,6 +880,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
           selectedFieldId={selectedMapFieldId}
           onFieldSelect={setSelectedMapFieldId}
           onFieldUpdate={handleFieldPositionUpdate}
+          onFieldDelete={(fieldDbId) => { setSelectedMapFieldId(null); deleteField(fieldDbId); }}
           onPositionPick={({ x, y, width, height, page_number }) => {
             // Read from refs so this inline callback is never stale
             if (boxedStepRef.current === 'awaiting_first') {

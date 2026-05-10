@@ -54,6 +54,7 @@ type Props = {
   selectedFieldId?: string | null;
   onFieldSelect?: (id: string | null) => void;
   onFieldUpdate?: (fieldDbId: string, pos: { x: number; y: number; width: number; height: number }) => void;
+  onFieldDelete?: (fieldDbId: string) => void;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
@@ -96,7 +97,7 @@ function applyDrag(drag: EditDrag, clientX: number, clientY: number) {
 export function PdfFieldMapper({
   templateId, token, fields, draftField,
   onPositionPick, onPageChange,
-  selectedFieldId, onFieldSelect, onFieldUpdate,
+  selectedFieldId, onFieldSelect, onFieldUpdate, onFieldDelete,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const editDragRef = useRef<EditDrag | null>(null);
@@ -424,6 +425,34 @@ export function PdfFieldMapper({
                 >
                   {field.field_id}
                 </div>
+
+                {isSelected && onFieldDelete && (
+                  <div
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      onFieldSelect?.(null);
+                      onFieldDelete(dbId);
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: -20,
+                      right: 0,
+                      fontSize: 11,
+                      background: '#c0392b',
+                      color: '#fff',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      pointerEvents: 'auto',
+                      lineHeight: '16px',
+                    }}
+                    title="Delete field"
+                  >
+                    ✕ delete
+                  </div>
+                )}
 
                 {isSelected &&
                   HANDLES.map(({ mode: hMode, style: hStyle }) => (
