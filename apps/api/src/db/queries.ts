@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PatientExcelImportRow } from '../lib/patientExcelImport.js';
 import { db, nowIso, parseJson, stringifyJson } from './database.js';
 
 export type SubmissionRow = {
@@ -450,16 +451,232 @@ export function listPatients(practiceId: string, search?: string): Array<Record<
   return db
     .prepare(
       `select p.id, p.child_first_name, p.child_last_name, p.child_dob, p.visit_type, p.updated_at,
+              p.patient_acct_no,
+              na.next_appointment_date, na.next_appointment_time,
               s.status as latest_submission_status,
               pa.email as account_email
        from patients p
+       left join (
+         select patient_id, appointment_date as next_appointment_date, appointment_time as next_appointment_time
+         from (
+           select patient_id, appointment_date, appointment_time,
+                  row_number() over (partition by patient_id order by created_at desc, id desc) as rn
+           from appointments
+         ) x where rn = 1
+       ) na on na.patient_id = p.id
        left join submissions s on s.patient_id = p.id
        left join patient_accounts pa on pa.id = p.account_id
-       where p.practice_id = ? and (p.child_first_name like ? or p.child_last_name like ?)
+       where p.practice_id = ? and (
+         p.child_first_name like ? or p.child_last_name like ?
+         or coalesce(p.patient_acct_no, '') like ?
+       )
        group by p.id
        order by p.updated_at desc`,
     )
-    .all(practiceId, q, q) as Array<Record<string, unknown>>;
+    .all(practiceId, q, q, q) as Array<Record<string, unknown>>;
+}
+
+export type BulkPatientImportResult = {
+  inserted: number;
+  skipped: number;
+  total_rows: number;
+  errors: string[];
+  imported_patients: Array<{
+    id: string;
+    child_first_name: string;
+    child_last_name: string;
+    patient_acct_no: string | null;
+  }>;
+};
+
+/**
+ * Insert parsed Excel rows; skips duplicates (same practice + acct no, or name + DOB),
+ * duplicate keys within the same upload batch, and unique constraint violations.
+ */
+export function bulkImportPatientsFromExcelRows(
+  practiceId: string,
+  parsedRows: PatientExcelImportRow[],
+  total_rows: number,
+  parseErrors: string[],
+): BulkPatientImportResult {
+  const errors = [...parseErrors];
+  const imported_patients: BulkPatientImportResult['imported_patients'] = [];
+  let inserted = 0;
+  let skipped = 0;
+
+  const dupByAcct = db.prepare(
+    `select id from patients where practice_id = ? and patient_acct_no is not null and trim(patient_acct_no) = ? limit 1`,
+  );
+  const dupByNameDob = db.prepare(
+    `select id from patients where practice_id = ?
+       and lower(trim(child_first_name)) = lower(trim(?))
+       and lower(trim(child_last_name)) = lower(trim(?))
+       and child_dob = ?
+     limit 1`,
+  );
+
+  const insertPatient = db.prepare(
+    `insert into patients (
+      id, practice_id, account_id, child_first_name, child_last_name, child_dob, visit_type,
+      preferred_language, sex, race_ethnicity, created_at, updated_at,
+      external_patient_key, patient_acct_no, import_source, imported_at
+    ) values (?, ?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  const insertAppointment = db.prepare(
+    `insert into appointments (
+      id, practice_id, patient_id, external_appointment_key,
+      appointment_date, appointment_time, visit_type_raw, visit_reason,
+      provider_name, facility_name, import_source, imported_at,
+      created_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  const insertGuardian = db.prepare(
+    `insert into guardians (
+      id, patient_id, guardian_index, full_name, relationship, phone, email, address, employer,
+      ssn_last4, created_at, updated_at
+    ) values (?, ?, 1, null, null, ?, ?, ?, null, null, ?, ?)`,
+  );
+
+  const insertInsurance = db.prepare(
+    `insert into insurance_policies (
+      id, patient_id, policy_order, company, subscriber_name, subscriber_dob, group_number, member_id,
+      created_at, updated_at
+    ) values (?, ?, 1, ?, null, null, null, ?, ?, ?)`,
+  );
+
+  const seenInFile = new Set<string>();
+
+  for (const row of parsedRows) {
+    const key = row.externalPatientKey;
+    if (seenInFile.has(key)) {
+      skipped += 1;
+      errors.push(`Row ${row.sheetRow}: skipped (duplicate row in file)`);
+      continue;
+    }
+    seenInFile.add(key);
+
+    let existing: { id: string } | undefined;
+    if (row.patientAcctNo?.trim()) {
+      existing = dupByAcct.get(practiceId, row.patientAcctNo.trim()) as { id: string } | undefined;
+    } else {
+      existing = dupByNameDob.get(practiceId, row.childFirstName, row.childLastName, row.childDob) as
+        | { id: string }
+        | undefined;
+    }
+
+    if (existing) {
+      skipped += 1;
+      errors.push(`Row ${row.sheetRow}: skipped (patient already exists)`);
+      continue;
+    }
+
+    const id = randomUUID();
+    const now = nowIso();
+    const acct = row.patientAcctNo?.trim() || null;
+
+    try {
+      insertPatient.run(
+        id,
+        practiceId,
+        row.childFirstName,
+        row.childLastName,
+        row.childDob,
+        row.visitType,
+        row.preferredLanguage,
+        row.sex,
+        row.raceEthnicity,
+        now,
+        now,
+        row.externalPatientKey,
+        acct,
+        'excel_bulk',
+        now,
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      if (msg.includes('UNIQUE') || msg.includes('unique')) {
+        skipped += 1;
+        errors.push(`Row ${row.sheetRow}: skipped (duplicate key)`);
+        continue;
+      }
+      errors.push(`Row ${row.sheetRow}: ${msg}`);
+      continue;
+    }
+
+    const apptKey = `excel:${practiceId}:${row.externalPatientKey}:r${row.sheetRow}`;
+    const hasApptData = Boolean(
+      row.nextAppointmentDate ||
+        row.nextAppointmentTime ||
+        row.appointmentVisitType ||
+        row.appointmentVisitReason ||
+        row.appointmentProviderName ||
+        row.appointmentFacilityName,
+    );
+    if (hasApptData) {
+      try {
+        insertAppointment.run(
+          randomUUID(),
+          practiceId,
+          id,
+          apptKey,
+          row.nextAppointmentDate,
+          row.nextAppointmentTime,
+          row.appointmentVisitType,
+          row.appointmentVisitReason,
+          row.appointmentProviderName,
+          row.appointmentFacilityName,
+          'excel_bulk',
+          now,
+          now,
+          now,
+        );
+      } catch (apptErr) {
+        const apMsg = (apptErr as Error).message ?? String(apptErr);
+        errors.push(`Row ${row.sheetRow}: patient saved but appointment not saved (${apMsg})`);
+      }
+    }
+
+    if (row.guardianPhones || row.guardianEmail || row.guardianAddress) {
+      insertGuardian.run(
+        randomUUID(),
+        id,
+        row.guardianPhones,
+        row.guardianEmail,
+        row.guardianAddress,
+        now,
+        now,
+      );
+    }
+
+    const hasPrimary = Boolean(row.primaryInsuranceCompany?.trim() || row.primaryInsuranceMemberId?.trim());
+    const hasApptIns = Boolean(
+      row.appointmentInsuranceCompany?.trim() || row.appointmentInsuranceMemberId?.trim(),
+    );
+    let company: string | null = null;
+    let memberId: string | null = null;
+    if (hasPrimary) {
+      company = row.primaryInsuranceCompany?.trim() || null;
+      memberId = row.primaryInsuranceMemberId?.trim() || null;
+    } else if (hasApptIns) {
+      company = row.appointmentInsuranceCompany?.trim() || null;
+      memberId = row.appointmentInsuranceMemberId?.trim() || null;
+    }
+    if (company || memberId) {
+      insertInsurance.run(randomUUID(), id, company, memberId, now, now);
+    }
+
+    inserted += 1;
+    imported_patients.push({
+      id,
+      child_first_name: row.childFirstName,
+      child_last_name: row.childLastName,
+      patient_acct_no: acct,
+    });
+  }
+
+  return { inserted, skipped, total_rows, errors, imported_patients };
 }
 
 function getRows(table: string, patientId: string): Array<Record<string, unknown>> {
@@ -482,6 +699,9 @@ export function getPatientDetail(patientId: string, practiceId: string): Record<
     patient,
     guardians: getRows('guardians', patientId),
     insurance_policies: getRows('insurance_policies', patientId),
+    appointments: db
+      .prepare(`select * from appointments where patient_id = ? order by created_at desc, id desc`)
+      .all(patientId),
     pharmacies: getOne('pharmacies', patientId),
     medical_history: getOne('medical_history', patientId),
     concerns: getOne('concerns', patientId),

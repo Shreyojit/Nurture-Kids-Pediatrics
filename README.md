@@ -79,3 +79,7 @@ npm run db:reset -- --yes
 See:
 
 - `docs/User_Manual_Release1.md`
+
+## Dummy note (BulkExcel-uploads)
+
+This paragraph is placeholder text for branch workflow testing only. Lorem ipsum dolor sit amet, consectetur adipiscing elit. It has no product meaning and can be removed when real documentation is added.

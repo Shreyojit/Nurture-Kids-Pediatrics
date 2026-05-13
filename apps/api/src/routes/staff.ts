@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { comparePassword, signToken } from '../lib/auth.js';
 import { fail, ok } from '../lib/response.js';
@@ -12,6 +13,7 @@ import {
   getPatientDetail,
   getSubmissionById,
   getStaffByEmail,
+  bulkImportPatientsFromExcelRows,
   listPatients,
   listSubmissions,
   expireStaleSubmissions,
@@ -21,8 +23,27 @@ import {
 } from '../db/queries.js';
 import { resolveDataPath } from '../config.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { parsePatientExcelBuffer } from '../lib/patientExcelImport.js';
 
 export const staffRouter = Router();
+
+const excelMemoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const name = file.originalname ?? '';
+    const okExt = /\.(xlsx|xls)$/i.test(name);
+    const okMime =
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel' ||
+      file.mimetype === 'application/octet-stream';
+    if (okExt || okMime) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error('Only Excel .xlsx or .xls uploads are allowed'));
+  },
+});
 
 type TemplateFieldContext = {
   field_id: string;
@@ -156,6 +177,33 @@ staffRouter.get('/patients', (req, res) => {
   const patients = listPatients(req.user!.practiceId, search);
   ok(res, patients);
 });
+
+staffRouter.post(
+  '/patients/bulk-upload',
+  (req, res, next) => {
+    excelMemoryUpload.single('file')(req, res, (err: unknown) => {
+      if (err) {
+        fail(res, 'VALIDATION_ERROR', err instanceof Error ? err.message : 'Upload failed', 422);
+        return;
+      }
+      next();
+    });
+  },
+  (req, res) => {
+    if (!req.file?.buffer) {
+      fail(res, 'VALIDATION_ERROR', 'Excel file field "file" is required', 422);
+      return;
+    }
+    const parsed = parsePatientExcelBuffer(req.file.buffer);
+    const result = bulkImportPatientsFromExcelRows(
+      req.user!.practiceId,
+      parsed.rows,
+      parsed.total_rows,
+      parsed.errors,
+    );
+    ok(res, result);
+  },
+);
 
 staffRouter.get('/patients/:id', (req, res) => {
   const detail = getPatientDetail(req.params.id, req.user!.practiceId);

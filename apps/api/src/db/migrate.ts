@@ -343,6 +343,9 @@ export function runMigrations(): void {
 
   ensureBundleColumns();
   ensureSubmissionColumns();
+  ensurePatientImportColumns();
+  ensureAppointmentsTable();
+  migrateLegacyPatientAppointmentColumns();
   ensureFieldColumns();
   migrateSubmissionsCheckConstraint();
   normalizeTemplatePaths();
@@ -469,5 +472,112 @@ function ensureSubmissionColumns(): void {
   }
   if (!names.has('completed_pdf_path')) {
     db.exec(`alter table submissions add column completed_pdf_path text`);
+  }
+}
+
+function ensurePatientImportColumns(): void {
+  const rows = db.prepare(`pragma table_info(patients)`).all() as Array<{ name: string }>;
+  const names = new Set(rows.map((r) => r.name));
+
+  const add = (col: string, ddl: string) => {
+    if (!names.has(col)) {
+      db.exec(`alter table patients add column ${ddl}`);
+      names.add(col);
+    }
+  };
+
+  add('external_patient_key', 'external_patient_key text');
+  add('patient_acct_no', 'patient_acct_no text');
+  add('import_source', 'import_source text');
+  add('imported_at', 'imported_at text');
+
+  db.exec(
+    `create unique index if not exists idx_patients_practice_external_key on patients(practice_id, external_patient_key) where external_patient_key is not null`,
+  );
+}
+
+function ensureAppointmentsTable(): void {
+  db.exec(`
+    create table if not exists appointments (
+      id text primary key,
+      practice_id text not null,
+      patient_id text not null,
+      external_appointment_key text,
+      appointment_date text,
+      appointment_time text,
+      visit_type_raw text,
+      visit_reason text,
+      provider_name text,
+      facility_name text,
+      import_source text,
+      imported_at text,
+      created_at text not null,
+      updated_at text not null,
+      foreign key(patient_id) references patients(id) on delete cascade,
+      foreign key(practice_id) references practices(id)
+    );
+
+    create index if not exists idx_appointments_patient on appointments(patient_id);
+    create index if not exists idx_appointments_practice_created on appointments(practice_id, created_at);
+    create unique index if not exists idx_appointments_practice_external
+      on appointments(practice_id, external_appointment_key) where external_appointment_key is not null;
+  `);
+}
+
+/** Move appointment fields from legacy patients columns into appointments, then drop those columns. */
+function migrateLegacyPatientAppointmentColumns(): void {
+  const cols = db.prepare(`pragma table_info(patients)`).all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('next_appointment_date') && !names.has('appointment_visit_type')) {
+    return;
+  }
+
+  try {
+    db.exec(`
+      insert into appointments (
+        id, practice_id, patient_id, external_appointment_key,
+        appointment_date, appointment_time, visit_type_raw, visit_reason,
+        provider_name, facility_name, import_source, imported_at, created_at, updated_at
+      )
+      select lower(hex(randomblob(16))), practice_id, id,
+             'legacy:' || id,
+             nullif(trim(next_appointment_date), ''),
+             nullif(trim(next_appointment_time), ''),
+             nullif(trim(appointment_visit_type), ''),
+             nullif(trim(appointment_visit_reason), ''),
+             nullif(trim(appointment_provider_name), ''),
+             nullif(trim(appointment_facility_name), ''),
+             import_source, imported_at, created_at, updated_at
+      from patients
+      where (
+        nullif(trim(next_appointment_date), '') is not null
+        or nullif(trim(next_appointment_time), '') is not null
+        or nullif(trim(appointment_visit_type), '') is not null
+        or nullif(trim(appointment_visit_reason), '') is not null
+        or nullif(trim(appointment_provider_name), '') is not null
+        or nullif(trim(appointment_facility_name), '') is not null
+      )
+        and not exists (select 1 from appointments a where a.external_appointment_key = 'legacy:' || patients.id)
+    `);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[migrate] legacy patient appointment copy failed:', err);
+    return;
+  }
+
+  for (const col of [
+    'next_appointment_date',
+    'next_appointment_time',
+    'appointment_visit_type',
+    'appointment_visit_reason',
+    'appointment_provider_name',
+    'appointment_facility_name',
+  ]) {
+    if (!names.has(col)) continue;
+    try {
+      db.exec(`alter table patients drop column ${col}`);
+    } catch {
+      // SQLite without drop column support or column already removed
+    }
   }
 }
