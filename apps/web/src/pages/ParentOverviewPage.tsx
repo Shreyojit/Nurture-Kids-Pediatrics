@@ -14,8 +14,11 @@ export function ParentOverviewPage() {
   useEffect(() => {
     api<FormTemplate>(`/api/submissions/${sessionId}/template`).then((t) => {
       const visitType = t.visit_type || localVisitType;
-      if (visitType === 'new_patient' || t.form_id === 'patient_registration') {
+      const isNew = visitType === 'new_patient' || t.form_id === 'patient_registration';
+      if (isNew) {
         navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
+      } else if (t.acroform_ready) {
+        navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
       } else {
         setTemplate(t);
       }

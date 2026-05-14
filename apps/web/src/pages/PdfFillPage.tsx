@@ -350,6 +350,18 @@ export function PdfFillPage() {
 
   const boxInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
+  // Autosave every 30 seconds
+  useEffect(() => {
+    if (!sessionId) return;
+    const timer = setInterval(() => {
+      api(`/api/submissions/${sessionId}/autosave`, {
+        method: 'PATCH',
+        body: JSON.stringify({ responses }),
+      }).catch(() => undefined);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [sessionId, responses]);
+
   // Fetch template with position data
   useEffect(() => {
     api<FormTemplate>(`/api/submissions/${sessionId}/template`)

@@ -150,10 +150,8 @@ export function autosaveSubmissionResponses(input: {
   };
 
   for (const [fieldId, payload] of Object.entries(input.responses)) {
-    merged[fieldId] = {
-      value: payload?.value ?? null,
-      updated_at: now,
-    };
+    const rawValue = payload?.value ?? null;
+    merged[fieldId] = { value: rawValue, updated_at: now };
   }
 
   db.prepare('update submissions set responses_json = ?, updated_at = ? where id = ?').run(
@@ -740,9 +738,16 @@ export function bulkImportPatientsFromExcelRows(
 }
 
 function getRows(table: string, patientId: string): Array<Record<string, unknown>> {
-  return db.prepare(`select * from ${table} where patient_id = ? order by created_at asc`).all(patientId) as Array<
+  const rows = db.prepare(`select * from ${table} where patient_id = ? order by created_at asc`).all(patientId) as Array<
     Record<string, unknown>
   >;
+  if (table === 'guardians') {
+    return rows.map((row) => ({
+      ...row,
+      ssn_last4: row.ssn_last4,
+    }));
+  }
+  return rows;
 }
 
 function getOne(table: string, patientId: string): Record<string, unknown> | null {
@@ -812,7 +817,10 @@ export function replaceChildTable(patientId: string, table: string, rows: Array<
   db.prepare(`delete from ${table} where patient_id = ?`).run(patientId);
   const now = nowIso();
   for (const row of rows) {
-    const filtered = columns.map((col) => row[col] ?? null);
+    const filtered = columns.map((col) => {
+      const val = row[col] ?? null;
+      return val;
+    });
     db.prepare(
       `insert into ${table} (id, patient_id, ${columns.join(', ')}, created_at, updated_at)
        values (?, ?, ${columns.map(() => '?').join(', ')}, ?, ?)`,
