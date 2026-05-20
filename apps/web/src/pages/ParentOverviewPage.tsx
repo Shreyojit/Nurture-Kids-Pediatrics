@@ -21,6 +21,8 @@ export function ParentOverviewPage() {
       }
       if (isMchat || visitType === 'new_patient' || t.form_id === 'patient_registration') {
         navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
+      } else if (t.acroform_ready) {
+        navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
       } else {
         setTemplate(t);
       }
