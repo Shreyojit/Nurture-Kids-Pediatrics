@@ -8,22 +8,32 @@ import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
 import { fail, ok } from '../lib/response.js';
 import {
   addTemplateField,
+  clearTemplateFieldsAndGroups,
+  countTemplateFields,
   createTemplate,
   createFieldGroup,
   deleteFieldGroup,
   deleteTemplateVersion,
   deleteTemplateField,
   getTemplateById,
+  getTemplateByIdOrThrow,
   getTemplateFields,
   getTemplateWithFields,
+  insertTemplateFieldRaw,
   listFieldGroups,
   listTemplates,
   publishTemplate,
   setTemplateAcroformPath,
+  setTemplateFieldSchema,
   updateFieldGroup,
   updateTemplateField,
 } from '../db/templateQueries.js';
+import { templateFieldSchemaZod } from '../lib/fieldSchema.js';
+import { db } from '../db/database.js';
 import { buildAcroformPdfFromFieldDefinitions } from '../lib/acroformEngine.js';
+import { importEmbeddedAcroFieldsFromPdfBytes } from '../lib/acroformFieldImporter.js';
+import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
+import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 
 export const staffTemplatesRouter = Router();
 
@@ -33,6 +43,8 @@ export const staffTemplatesRouter = Router();
 function queueAcroformRebuild(templateId: string, practiceId: string): void {
   const template = getTemplateById(templateId, practiceId);
   if (!template?.acroform_pdf_path) return;
+  // Native AcroForm PDFs use the source file as the fillable target — never overlay generated widgets.
+  if (template.acroform_pdf_path === template.source_pdf_path) return;
 
   setImmediate(async () => {
     try {
@@ -140,14 +152,11 @@ staffTemplatesRouter.delete('/:id', (req, res) => {
       id: deleted.id,
       version: deleted.version,
       template_key: deleted.template_key,
+      status: deleted.status,
+      removed_assignment_count: deleted.removed_assignment_count,
     });
   } catch (error) {
-    const message = (error as Error).message;
-    if (message.includes('published template version')) {
-      fail(res, 'VALIDATION_ERROR', message, 409);
-      return;
-    }
-    fail(res, 'DELETE_ERROR', message, 400);
+    fail(res, 'DELETE_ERROR', (error as Error).message, 400);
   }
 });
 
@@ -172,7 +181,18 @@ const fieldSchema = z.object({
   parent_field_id: z.string().nullable().optional(),
 });
 
-const allowedFieldTypes = new Set(['text', 'textarea', 'checkbox', 'radio', 'select', 'date', 'signature', 'radio_option', 'box_char'] as const);
+const allowedFieldTypes = new Set([
+  'text',
+  'textarea',
+  'checkbox',
+  'radio',
+  'select',
+  'date',
+  'signature',
+  'radio_option',
+  'box_char',
+  'pdf_marker',
+] as const);
 
 function formatIssues(issues: string[]): string {
   return issues.join('; ');
@@ -535,6 +555,100 @@ staffTemplatesRouter.delete('/:id/groups/:gid', (req, res) => {
   }
 });
 
+staffTemplatesRouter.post('/:id/import-acrofields', async (req, res) => {
+  const replace = req.query.replace === '1' || req.query.replace === 'true';
+  const template = getTemplateById(req.params.id, req.user!.practiceId);
+  if (!template) {
+    fail(res, 'NOT_FOUND', 'Template not found', 404);
+    return;
+  }
+
+  const existingCount = countTemplateFields(template.id);
+  if (existingCount > 0 && !replace) {
+    fail(
+      res,
+      'FIELDS_EXIST',
+      'This template already has field definitions. Open the import again with ?replace=1 after confirming you want to replace them.',
+      409,
+    );
+    return;
+  }
+
+  const pdfPath = resolveDataPath(template.source_pdf_path);
+  if (!fs.existsSync(pdfPath)) {
+    fail(res, 'NOT_FOUND', 'Source PDF file not found on disk', 404);
+    return;
+  }
+
+  let plan;
+  try {
+    const bytes = new Uint8Array(fs.readFileSync(pdfPath));
+    plan = await importEmbeddedAcroFieldsFromPdfBytes(bytes);
+  } catch (error) {
+    fail(res, 'IMPORT_FAILED', error instanceof Error ? error.message : 'Failed to read PDF form fields', 500);
+    return;
+  }
+
+  if (plan.fields.length === 0) {
+    fail(
+      res,
+      'NO_EMBEDDED_FIELDS',
+      'No embedded AcroForm fields were found in this PDF. Use the graphical field mapper, then Generate AcroForm, or export a PDF with fillable fields from your authoring tool.',
+      422,
+    );
+    return;
+  }
+
+  try {
+    const run = db.transaction(() => {
+      clearTemplateFieldsAndGroups(template.id);
+      const groupIds: string[] = [];
+      for (const g of plan.groups) {
+        const row = createFieldGroup({
+          templateId: template.id,
+          group_type: g.group_type,
+          group_name: g.group_name,
+          acro_group_name: g.acro_group_name,
+        });
+        groupIds.push(row.id);
+      }
+      for (const row of plan.fields) {
+        const { group_index, ...field } = row;
+        const gid = group_index != null ? groupIds[group_index] ?? null : null;
+        insertTemplateFieldRaw({
+          templateId: template.id,
+          field: { ...field, group_id: gid },
+        });
+      }
+    });
+    run();
+  } catch (error) {
+    fail(res, 'IMPORT_DB_ERROR', error instanceof Error ? error.message : 'Database import failed', 500);
+    return;
+  }
+
+  setTemplateAcroformPath({
+    templateId: template.id,
+    practiceId: req.user!.practiceId,
+    acroformPdfPath: template.source_pdf_path,
+  });
+
+  try {
+    const updated = getTemplateWithFields(template.id, req.user!.practiceId);
+    ok(res, {
+      ...updated,
+      import_summary: {
+        fields_imported: plan.fields.length,
+        groups_imported: plan.groups.length,
+        acroform_pdf_path: template.source_pdf_path,
+        uses_embedded_acroform: true,
+      },
+    });
+  } catch {
+    fail(res, 'NOT_FOUND', 'Template not found', 404);
+  }
+});
+
 staffTemplatesRouter.post('/:id/generate-acroform', async (req, res) => {
   try {
     const template = getTemplateWithFields(req.params.id, req.user!.practiceId) as any;
@@ -565,15 +679,76 @@ staffTemplatesRouter.post('/:id/generate-acroform', async (req, res) => {
   }
 });
 
-staffTemplatesRouter.post('/:id/publish', (req, res) => {
+staffTemplatesRouter.put('/:id/schema', (req, res) => {
+  const parsed = templateFieldSchemaZod.safeParse(req.body);
+  if (!parsed.success) {
+    fail(res, 'VALIDATION_ERROR', 'schema.fields must be a valid array', 422, parsed.error.flatten());
+    return;
+  }
+
   try {
     const template = getTemplateById(req.params.id, req.user!.practiceId);
     if (!template) {
       fail(res, 'NOT_FOUND', 'Template not found', 404);
       return;
     }
+    if (!isMchatTemplateKey(template.template_key)) {
+      fail(res, 'VALIDATION_ERROR', 'Visual PDF field schema is only for M-CHAT templates', 422);
+      return;
+    }
 
-    if (!template.acroform_pdf_path || !fs.existsSync(resolveDataPath(template.acroform_pdf_path))) {
+    const updated = setTemplateFieldSchema({
+      templateId: req.params.id,
+      practiceId: req.user!.practiceId,
+      schema: parsed.data,
+    });
+    ok(res, {
+      message: 'Schema saved successfully',
+      schema: parsed.data,
+      template: updated,
+    });
+  } catch (error) {
+    fail(res, 'SCHEMA_SAVE_ERROR', (error as Error).message, 400);
+  }
+});
+
+staffTemplatesRouter.post('/:id/publish', (req, res) => {
+  try {
+    let template = getTemplateById(req.params.id, req.user!.practiceId);
+    if (!template) {
+      fail(res, 'NOT_FOUND', 'Template not found', 404);
+      return;
+    }
+
+    const isMchat = isMchatTemplateKey(template.template_key);
+
+    if (isMchat) {
+      // Accept current mapper state in the request body so publish cannot skip an unsaved mapping.
+      const bodySchema = templateFieldSchemaZod.safeParse(req.body);
+      if (bodySchema.success && hasOverlayFields(bodySchema.data)) {
+        setTemplateFieldSchema({
+          templateId: req.params.id,
+          practiceId: req.user!.practiceId,
+          schema: bodySchema.data,
+        });
+        template = getTemplateByIdOrThrow(req.params.id, req.user!.practiceId);
+      }
+
+      const fieldSchema = parseTemplateFieldSchema(template.field_schema_json);
+      if (!template.source_pdf_path || !fs.existsSync(resolveDataPath(template.source_pdf_path))) {
+        fail(res, 'VALIDATION_ERROR', 'Upload the M-CHAT source PDF before publish', 422);
+        return;
+      }
+      if (!hasOverlayFields(fieldSchema)) {
+        fail(
+          res,
+          'VALIDATION_ERROR',
+          'Save your PDF field mapping first (at least one field), then publish',
+          422,
+        );
+        return;
+      }
+    } else if (!template.acroform_pdf_path || !fs.existsSync(resolveDataPath(template.acroform_pdf_path))) {
       fail(res, 'VALIDATION_ERROR', 'Generate AcroForm PDF before publish', 422);
       return;
     }

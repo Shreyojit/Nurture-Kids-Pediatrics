@@ -14,7 +14,12 @@ export function ParentOverviewPage() {
   useEffect(() => {
     api<FormTemplate>(`/api/submissions/${sessionId}/template`).then((t) => {
       const visitType = t.visit_type || localVisitType;
-      if (visitType === 'new_patient' || t.form_id === 'patient_registration') {
+      const isMchat = t.form_id === 'mchat' || /^mchat/i.test(t.form_id ?? '');
+      if (isMchat && t.pdf_overlay_ready && (t.field_schema?.fields?.length ?? 0) > 0) {
+        navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
+        return;
+      }
+      if (isMchat || visitType === 'new_patient' || t.form_id === 'patient_registration') {
         navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
       } else {
         setTemplate(t);
@@ -41,7 +46,12 @@ export function ParentOverviewPage() {
           </Link>
         ) : null}
         <Link to={`/p/${slug}/session/${sessionId}/form/${template.form_id}/step/1`}>
-          <button style={{ width: '100%', background: template.acroform_ready && !isNewPatient ? '#6b7280' : undefined }}>
+          <button
+            style={{
+              width: '100%',
+              background: template.acroform_ready && !isNewPatient ? '#6b7280' : undefined,
+            }}
+          >
             {template.acroform_ready && !isNewPatient ? 'Fill Step-by-Step Instead' : 'Start Paperwork'}
           </button>
         </Link>

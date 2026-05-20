@@ -298,7 +298,7 @@ export async function fillAcroformPdfWithResponses(input: {
             const selectedVal = valueFromResponse(input.responses[`__group_${field.group_id}`]);
             if (hasMeaningfulResponseValue(selectedVal)) {
               const radio = form.getRadioGroup(acroName);
-              radio.select(String(selectedVal));
+              radio.select(String(selectedVal).trim());
             }
             filledRadioGroups.add(field.group_id);
           }
@@ -317,13 +317,23 @@ export async function fillAcroformPdfWithResponses(input: {
 
       if (field.field_type === 'radio') {
         const radio = form.getRadioGroup(field.acro_field_name);
-        radio.select(String(responseVal));
+        radio.select(String(responseVal).trim());
         continue;
       }
 
       if (field.field_type === 'select') {
-        const dd = form.getDropdown(field.acro_field_name);
-        dd.select(String(responseVal));
+        const valStr = String(responseVal).trim();
+        try {
+          const dd = form.getDropdown(field.acro_field_name);
+          dd.select(valStr);
+        } catch {
+          try {
+            const ol = form.getOptionList(field.acro_field_name);
+            ol.select(valStr);
+          } catch {
+            // ignore missing / wrong control type
+          }
+        }
         continue;
       }
 

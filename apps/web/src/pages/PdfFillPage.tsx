@@ -1,12 +1,15 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AnnotationMode, GlobalWorkerOptions, getDocument, version } from 'pdfjs-dist';
+import { AnnotationMode, getDocument } from 'pdfjs-dist';
+import { PdfOverlayFillView } from '../components/PdfOverlayFillView';
 import { api } from '../lib/api';
+import { ensurePdfjsWorker } from '../lib/pdfjsSetup';
 import { getLocal, setLocal } from '../lib/storage';
 import type { FormTemplate, TemplateField } from '../lib/types';
 
+ensurePdfjsWorker();
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
-GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
 
 // Must match PdfFieldMapper's targetWidth so coordinates line up exactly
 const TARGET_WIDTH = 760;
@@ -428,7 +431,13 @@ export function PdfFillPage() {
     }
   }
 
-  const loading = loadingTemplate || loadingPdf;
+  const isMchatForm = template?.form_id === 'mchat' || /^mchat/i.test(template?.form_id ?? '');
+  const overlaySchema =
+    isMchatForm && template?.field_schema && template.field_schema.fields.length > 0
+      ? template.field_schema
+      : null;
+
+  const loading = loadingTemplate || (overlaySchema ? false : loadingPdf);
 
   if (loading) {
     return (
@@ -438,7 +447,7 @@ export function PdfFillPage() {
     );
   }
 
-  if (!template || !pdfDoc || !scale) {
+  if (!template || (!overlaySchema && (!pdfDoc || !scale))) {
     return (
       <div className="card mobile">
         <div className="error">{error || 'No PDF form is available for this submission.'}</div>
@@ -447,6 +456,38 @@ export function PdfFillPage() {
             Go back
           </button>
         </p>
+      </div>
+    );
+  }
+
+  if (overlaySchema) {
+    return (
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 16px' }}>
+          <h2 style={{ marginBottom: 4 }}>{template.title}</h2>
+          <p style={{ marginTop: 0, marginBottom: 20, color: '#555' }}>
+            Fill fields directly on the PDF below, then click Submit.
+          </p>
+          <PdfOverlayFillView
+            sessionId={sessionId}
+            schema={overlaySchema}
+            responses={responses}
+            onResponseChange={setResponses}
+          />
+          {error ? <div className="error" style={{ marginBottom: 12 }}>{error}</div> : null}
+          <div style={{ display: 'flex', gap: 12, marginTop: 8, marginBottom: 32 }}>
+            <button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Submitting...' : 'Submit Form'}
+            </button>
+            <button
+              onClick={() => navigate(`/p/${slug}/session/${sessionId}/overview`)}
+              disabled={submitting}
+              style={{ background: '#6b7280' }}
+            >
+              Back
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

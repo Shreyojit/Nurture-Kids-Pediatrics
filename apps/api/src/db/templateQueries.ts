@@ -1,4 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
+import {
+  EMPTY_FIELD_SCHEMA,
+  hasOverlayFields,
+  parseTemplateFieldSchema,
+  stringifyTemplateFieldSchema,
+  type TemplateFieldSchema,
+} from '../lib/fieldSchema.js';
 import { db, nowIso, parseJson, stringifyJson } from './database.js';
 
 export type TemplateStatus = 'draft' | 'published' | 'archived';
@@ -74,6 +82,7 @@ export type TemplateRecord = {
   name: string;
   source_pdf_path: string;
   acroform_pdf_path: string | null;
+  field_schema_json?: string;
   status: TemplateStatus;
   created_by: string | null;
   created_at: string;
@@ -118,9 +127,20 @@ export function createTemplate(input: {
   db.prepare(
     `insert into pdf_templates (
       id, practice_id, template_key, version, name, source_pdf_path, acroform_pdf_path,
-      status, created_by, created_at, updated_at
-    ) values (?, ?, ?, ?, ?, ?, null, 'draft', ?, ?, ?)`,
-  ).run(id, input.practiceId, input.templateKey, version, input.name, input.sourcePdfPath, input.createdBy ?? null, now, now);
+      field_schema_json, status, created_by, created_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, null, ?, 'draft', ?, ?, ?)`,
+  ).run(
+    id,
+    input.practiceId,
+    input.templateKey,
+    version,
+    input.name,
+    input.sourcePdfPath,
+    stringifyTemplateFieldSchema(EMPTY_FIELD_SCHEMA),
+    input.createdBy ?? null,
+    now,
+    now,
+  );
 
   return getTemplateByIdOrThrow(id, input.practiceId);
 }
@@ -143,6 +163,57 @@ export function getTemplateFields(templateId: string): Array<TemplateFieldRecord
     .all(templateId) as Array<TemplateFieldRecord>;
 }
 
+export function countTemplateFields(templateId: string): number {
+  const row = db.prepare('select count(*) as c from pdf_template_fields where template_id = ?').get(templateId) as {
+    c: number;
+  };
+  return Number(row?.c ?? 0);
+}
+
+/** Remove all field definitions and groups for a template (used before AcroForm re-import). */
+export function clearTemplateFieldsAndGroups(templateId: string): void {
+  db.prepare('delete from pdf_template_fields where template_id = ?').run(templateId);
+  db.prepare('delete from field_groups where template_id = ?').run(templateId);
+}
+
+/** Insert a single field row without loading the full template (bulk import). */
+export function insertTemplateFieldRaw(input: { templateId: string; field: TemplateFieldInput }): void {
+  const id = randomUUID();
+  const now = nowIso();
+  const f = input.field;
+  db.prepare(
+    `insert into pdf_template_fields (
+      id, template_id, field_id, field_name, field_type, acro_field_name, required,
+      page_number, x, y, width, height, options_json, validation_json,
+      section_key, display_order, font_size, group_id, group_value, parent_field_id,
+      created_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.templateId,
+    f.field_id,
+    f.field_name,
+    f.field_type,
+    f.acro_field_name,
+    f.required ? 1 : 0,
+    f.page_number ?? 1,
+    f.x ?? 50,
+    f.y ?? 700,
+    f.width ?? 180,
+    f.height ?? 18,
+    stringifyJson(f.options_json ?? []),
+    stringifyJson(f.validation_json ?? {}),
+    f.section_key ?? 'General',
+    f.display_order ?? 0,
+    f.font_size ?? 12,
+    f.group_id ?? null,
+    f.group_value ?? null,
+    f.parent_field_id ?? null,
+    now,
+    now,
+  );
+}
+
 export function getTemplateWithFields(templateId: string, practiceId: string): Record<string, unknown> {
   const template = getTemplateByIdOrThrow(templateId, practiceId);
   const fields = getTemplateFields(templateId).map((row) => ({
@@ -154,11 +225,31 @@ export function getTemplateWithFields(templateId: string, practiceId: string): R
   }));
   const groups = listFieldGroups(templateId);
 
+  const isMchat = isMchatTemplateKey(template.template_key);
+  const field_schema = isMchat ? parseTemplateFieldSchema(template.field_schema_json) : { fields: [] };
+
   return {
     ...template,
     fields,
     groups,
+    ...(isMchat
+      ? { field_schema, pdf_overlay_ready: hasOverlayFields(field_schema) }
+      : {}),
   };
+}
+
+export function setTemplateFieldSchema(input: {
+  templateId: string;
+  practiceId: string;
+  schema: TemplateFieldSchema;
+}): Record<string, unknown> {
+  const template = getTemplateByIdOrThrow(input.templateId, input.practiceId);
+  db.prepare('update pdf_templates set field_schema_json = ?, updated_at = ? where id = ?').run(
+    stringifyTemplateFieldSchema(input.schema),
+    nowIso(),
+    template.id,
+  );
+  return getTemplateWithFields(template.id, input.practiceId);
 }
 
 export function addTemplateField(input: {
@@ -322,14 +413,19 @@ export function publishTemplate(input: {
 export function deleteTemplateVersion(input: {
   templateId: string;
   practiceId: string;
-}): TemplateRecord {
+}): TemplateRecord & { removed_assignment_count: number } {
   const template = getTemplateByIdOrThrow(input.templateId, input.practiceId);
-  if (template.status === 'published') {
-    throw new Error('Cannot delete published template version. Publish another version first.');
-  }
+
+  const removedAssignments = db
+    .prepare('delete from form_assignments where template_id = ?')
+    .run(template.id);
 
   db.prepare('delete from pdf_templates where id = ? and practice_id = ?').run(template.id, input.practiceId);
-  return template;
+
+  return {
+    ...template,
+    removed_assignment_count: removedAssignments.changes ?? 0,
+  };
 }
 
 export function getActivePublishedTemplate(practiceId: string, templateKey = 'patient_registration'): Record<string, unknown> | null {
@@ -367,11 +463,42 @@ export function getActivePublishedTemplate(practiceId: string, templateKey = 'pa
 
   const groups = listFieldGroups(template.id);
 
+  const isMchat = isMchatTemplateKey(template.template_key);
+  const field_schema = isMchat ? parseTemplateFieldSchema(template.field_schema_json) : { fields: [] };
+
   return {
     ...template,
     fields,
     groups,
+    ...(isMchat
+      ? { field_schema, pdf_overlay_ready: hasOverlayFields(field_schema) }
+      : {}),
   };
+}
+
+/** Latest draft or published M-CHAT row with a source PDF (no publish required for JSON intake). */
+export function getLatestMchatTemplateForIntake(practiceId: string, templateKey: string): Record<string, unknown> | null {
+  if (!isMchatTemplateKey(templateKey)) return null;
+  const row = db
+    .prepare(
+      `select id from pdf_templates
+       where practice_id = ?
+         and lower(trim(template_key)) = lower(trim(?))
+         and status in ('draft', 'published')
+         and coalesce(trim(source_pdf_path), '') != ''
+       order by case when status = 'published' then 0 else 1 end, version desc
+       limit 1`,
+    )
+    .get(practiceId, templateKey) as { id: string } | undefined;
+  if (!row) return null;
+  return getTemplateWithFields(row.id, practiceId);
+}
+
+/** Published template, or for M-CHAT the latest draft/published with source PDF. */
+export function resolveIntakeTemplate(practiceId: string, templateKey: string): Record<string, unknown> | null {
+  const published = getActivePublishedTemplate(practiceId, templateKey);
+  if (published) return published;
+  return getLatestMchatTemplateForIntake(practiceId, templateKey);
 }
 
 export function getTemplateBySubmissionContext(submissionId: string): {

@@ -96,7 +96,11 @@ export function ParentFormPage() {
     for (const field of safeCurrentStep.fields) {
       const value = responses[field.field_id];
       if (field.required) {
-        if (field.input_type === 'checkbox' && !value) {
+        if (field.input_type === 'boolean_yes_no') {
+          if (value !== true && value !== false) {
+            errors[field.field_id] = 'Please select Yes or No / Sí o No.';
+          }
+        } else if (field.input_type === 'checkbox' && !value) {
           errors[field.field_id] = 'This field is required.';
         } else if (field.input_type !== 'checkbox' && (value === undefined || value === null || value === '')) {
           errors[field.field_id] = 'This field is required.';

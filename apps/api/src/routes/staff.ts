@@ -4,8 +4,12 @@ import { z } from 'zod';
 import { comparePassword, signToken } from '../lib/auth.js';
 import { fail, ok } from '../lib/response.js';
 import { buildPatientRegistrationFileName, generateSubmissionPdf } from '../lib/pdfGenerator.js';
+import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
 import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
-import { getTemplateBySubmissionContext } from '../db/templateQueries.js';
+import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
+import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
+import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
+import { getTemplateBySubmissionContext, getTemplateWithFields } from '../db/templateQueries.js';
 import {
   addSubmissionEvent,
   autosaveSubmissionResponses,
@@ -21,6 +25,7 @@ import {
   updatePatientCore,
   upsertOneToOne,
 } from '../db/queries.js';
+import { parseJson } from '../db/database.js';
 import { resolveDataPath } from '../config.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { parsePatientExcelBuffer } from '../lib/patientExcelImport.js';
@@ -401,9 +406,22 @@ staffRouter.get('/submissions/:id/pdf', async (req, res) => {
     let pdfBytes: Uint8Array;
 
     const templateContext = getTemplateBySubmissionContext(req.params.id);
-    if (templateContext?.template.acroform_pdf_path) {
-      const responseMap = (exported.responses ?? {}) as Record<string, unknown>;
+    const templateKey = String(templateContext?.template.template_key ?? '');
+    const responseMap = (exported.responses ?? {}) as Record<string, unknown>;
 
+    const overlaySchema = parseTemplateFieldSchema(templateContext?.template.field_schema_json);
+    if (
+      templateContext &&
+      isMchatTemplateKey(templateKey) &&
+      hasOverlayFields(overlaySchema) &&
+      templateContext.template.source_pdf_path
+    ) {
+      pdfBytes = await fillPdfWithOverlaySchema({
+        sourcePdfPath: resolveDataPath(templateContext.template.source_pdf_path),
+        schema: overlaySchema,
+        responses: responseMap,
+      });
+    } else if (templateContext?.template.acroform_pdf_path) {
       pdfBytes = await fillAcroformPdfWithResponses({
         acroformPdfPath: resolveDataPath(templateContext.template.acroform_pdf_path),
         fields: templateContext.fields as Array<{
@@ -447,5 +465,45 @@ staffRouter.get('/submissions/:id/pdf', async (req, res) => {
     res.send(Buffer.from(pdfBytes));
   } catch (error) {
     fail(res, 'PDF_EXPORT_ERROR', (error as Error).message || 'Failed to export PDF', 500);
+  }
+});
+
+/** Plain PDF listing `responses_json` keys and values (new document; does not alter the source template). */
+staffRouter.get('/submissions/:id/responses-pdf', async (req, res) => {
+  try {
+    getStaffScopedSubmissionOrFail(req.params.id, req.user!.practiceId);
+    const submission = getSubmissionById(req.params.id);
+    if (!submission) {
+      fail(res, 'NOT_FOUND', 'Submission not found', 404);
+      return;
+    }
+    const responses = parseJson<Record<string, unknown>>(submission.responses_json, {});
+    const ctx = getTemplateBySubmissionContext(submission.id);
+    const templateName = ctx?.template.name ?? String(submission.form_id ?? '');
+    const pdfBytes = await generateResponsesSummaryPdf({
+      title: 'Questionnaire responses',
+      subtitleLines: [
+        `Submission: ${submission.id}`,
+        `Form: ${String(submission.form_id ?? '')} · Template: ${templateName}`,
+        submission.submitted_at ? `Submitted: ${submission.submitted_at}` : 'Not yet submitted',
+        `Confirmation code: ${submission.confirmation_code}`,
+      ],
+      responses,
+    });
+    const form = parseJson<Record<string, unknown>>(submission.form_data_json, {});
+    const child = (form.patient as Record<string, unknown> | undefined)?.child as Record<string, unknown> | undefined;
+    const firstName = String(child?.first_name ?? 'patient');
+    const lastName = String(child?.last_name ?? 'unknown');
+    const safeName = `${firstName}_${lastName}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/_+/g, '_');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=\"${safeName}_responses.pdf\"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (error) {
+    fail(res, 'PDF_EXPORT_ERROR', (error as Error).message || 'Failed to export responses PDF', 500);
   }
 });

@@ -347,8 +347,17 @@ export function runMigrations(): void {
   ensureAppointmentsTable();
   migrateLegacyPatientAppointmentColumns();
   ensureFieldColumns();
+  ensureTemplateSchemaColumn();
   migrateSubmissionsCheckConstraint();
   normalizeTemplatePaths();
+}
+
+function ensureTemplateSchemaColumn(): void {
+  const rows = db.prepare(`pragma table_info(pdf_templates)`).all() as Array<{ name: string }>;
+  const names = new Set(rows.map((r) => r.name));
+  if (!names.has('field_schema_json')) {
+    db.exec(`alter table pdf_templates add column field_schema_json text not null default '{"fields":[]}'`);
+  }
 }
 
 function ensureBundleColumns(): void {

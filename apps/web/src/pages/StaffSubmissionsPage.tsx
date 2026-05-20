@@ -134,7 +134,7 @@ export function StaffSubmissionsPage({ token }: Props) {
     <div className="container">
       <div className="card">
         <h2>All Submissions</h2>
-        <p>Every form submitted by parents. Download the filled PDF or view the full patient record.</p>
+        <p>Every form submitted by parents. View or download the filled form PDF after submit.</p>
         {error ? <div className="error">{error}</div> : null}
 
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -202,7 +202,7 @@ export function StaffSubmissionsPage({ token }: Props) {
                   </td>
                   <td>{s.confirmation_code}</td>
                   <td>{s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : '—'}</td>
-                  <td style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <td style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {isCompleted ? (
                       <>
                         <button
@@ -222,7 +222,7 @@ export function StaffSubmissionsPage({ token }: Props) {
                         </button>
                       </>
                     ) : (
-                      <span style={{ color: '#9ca3af', fontSize: 13 }}>Not submitted</span>
+                      <span style={{ color: '#9ca3af', fontSize: 13 }}>Form PDF after submit</span>
                     )}
                     {s.patient_id ? (
                       <Link to={`/staff/patients/${s.patient_id}`} style={{ fontSize: 13 }}>View Patient</Link>
