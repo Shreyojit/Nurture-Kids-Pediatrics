@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
 import { PdfFieldMapper } from '../components/PdfFieldMapper';
+import { PdfVisualMapper } from '../components/PdfVisualMapper';
+import '../styles/pdfVisualMapper.css';
+import { EMPTY_FIELD_SCHEMA, type TemplateFieldSchema } from '../lib/fieldSchema';
 
 type Props = {
   token: string | null;
@@ -46,12 +49,16 @@ type TemplateDetail = {
   acroform_pdf_path: string | null;
   fields: TemplateField[];
   groups: FieldGroup[];
+  field_schema?: TemplateFieldSchema;
+  pdf_overlay_ready?: boolean;
 };
 
 type EditableField = {
   id?: string;
   field_id: string;
   field_name: string;
+  /** Shown to parents as a second line (stored as validation_json.label_es) */
+  label_es: string;
   field_type: TemplateField['field_type'];
   acro_field_name: string;
   required: boolean;
@@ -73,10 +80,12 @@ type EditableField = {
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
 function toEditableField(field: TemplateField): EditableField {
+  const { rest, label_es } = splitValidationForEditor(field.validation_json ?? {});
   return {
     id: field.id,
     field_id: field.field_id,
     field_name: field.field_name,
+    label_es,
     field_type: field.field_type,
     acro_field_name: field.acro_field_name,
     required: Boolean(field.required),
@@ -86,7 +95,7 @@ function toEditableField(field: TemplateField): EditableField {
     width: Number(field.width ?? 120),
     height: Number(field.height ?? 18),
     options_csv: (field.options_json ?? []).join(', '),
-    validation_text: JSON.stringify(field.validation_json ?? {}, null, 2),
+    validation_text: JSON.stringify(rest, null, 2),
     section_key: field.section_key ?? 'General',
     display_order: Number(field.display_order ?? 0),
     font_size: Number(field.font_size ?? 12),
@@ -100,6 +109,7 @@ function emptyField(): EditableField {
   return {
     field_id: '',
     field_name: '',
+    label_es: '',
     field_type: 'text',
     acro_field_name: '',
     required: false,
@@ -136,6 +146,15 @@ function parseValidationJson(value: string): Record<string, unknown> {
   throw new Error('validation_json must be a JSON object');
 }
 
+/** Pull label_es out of validation_json so the JSON textarea and the Spanish line input stay in sync. */
+function splitValidationForEditor(validation: Record<string, unknown>): { rest: Record<string, unknown>; label_es: string } {
+  const rest = { ...validation };
+  const raw = rest.label_es;
+  delete rest.label_es;
+  const label_es = typeof raw === 'string' ? raw : '';
+  return { rest, label_es };
+}
+
 function ensureFiniteNumber(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
@@ -169,6 +188,9 @@ function buildFieldPayload(draft: EditableField, existingIds: Set<string>, curre
 
   const acroFieldName = draft.acro_field_name.trim() || fieldId;
   const validationJson = parseValidationJson(draft.validation_text);
+  delete validationJson.label_es;
+  const es = draft.label_es.trim();
+  if (es) validationJson.label_es = es;
 
   return {
     field_id: fieldId,
@@ -203,6 +225,8 @@ export function StaffTemplateEditorPage({ token }: Props) {
   const [editing, setEditing] = useState<Record<string, EditableField>>({});
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set());
   const [selectedMapFieldId, setSelectedMapFieldId] = useState<string | null>(null);
+  const [fieldSchema, setFieldSchema] = useState<TemplateFieldSchema>(EMPTY_FIELD_SCHEMA);
+  const savedSchemaJsonRef = useRef(JSON.stringify(EMPTY_FIELD_SCHEMA));
 
   function toggleFieldExpanded(fieldId: string) {
     setExpandedFields((prev) => {
@@ -248,6 +272,12 @@ export function StaffTemplateEditorPage({ token }: Props) {
         headers: authHeader(token),
       });
       setTemplate(detail);
+      const loadedSchema =
+        detail.field_schema && Array.isArray(detail.field_schema.fields)
+          ? detail.field_schema
+          : EMPTY_FIELD_SCHEMA;
+      setFieldSchema(loadedSchema);
+      savedSchemaJsonRef.current = JSON.stringify(loadedSchema);
       const mapped: Record<string, EditableField> = {};
       for (const field of detail.fields ?? []) {
         mapped[field.id] = toEditableField(field);
@@ -399,16 +429,45 @@ export function StaffTemplateEditorPage({ token }: Props) {
     }
   }
 
+  async function saveFieldSchemaToServer(schema: TemplateFieldSchema): Promise<boolean> {
+    if (!token || !template) return false;
+    setError('');
+    try {
+      setSaving('schema');
+      await api(`/api/staff/templates/${template.id}/schema`, {
+        method: 'PUT',
+        headers: authHeader(token),
+        body: JSON.stringify(schema),
+      });
+      savedSchemaJsonRef.current = JSON.stringify(schema);
+      await loadTemplate();
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setSaving('');
+    }
+  }
+
   async function publishTemplate() {
     if (!token || !template) return;
     setError('');
+
+    const isMchat = /^mchat/i.test(template.template_key);
+    if (isMchat && fieldSchema.fields.length === 0) {
+      setError('Map at least one field on the PDF before publishing.');
+      return;
+    }
 
     try {
       setSaving('publish');
       await api(`/api/staff/templates/${template.id}/publish`, {
         method: 'POST',
         headers: authHeader(token),
+        body: isMchat ? JSON.stringify(fieldSchema) : undefined,
       });
+      savedSchemaJsonRef.current = JSON.stringify(fieldSchema);
       await loadTemplate();
     } catch (e) {
       setError((e as Error).message);
@@ -727,6 +786,81 @@ export function StaffTemplateEditorPage({ token }: Props) {
     );
   }
 
+  const isMchatTemplate = /^mchat/i.test(template.template_key);
+  const overlayFieldCount = fieldSchema.fields.length;
+  const schemaDirty = JSON.stringify(fieldSchema) !== savedSchemaJsonRef.current;
+
+  async function saveFieldSchema() {
+    await saveFieldSchemaToServer(fieldSchema);
+  }
+
+  if (isMchatTemplate) {
+    return (
+      <div className="mchat-editor-wrap">
+        <div className="card">
+          <Link to="/staff/templates">← Back to Templates</Link>
+          <h2>
+            {template.name} (v{template.version})
+          </h2>
+          <p>
+            Key: <span className="badge">{template.template_key}</span> Status:{' '}
+            <span className="badge">{template.status}</span>
+          </p>
+          {error ? <div className="error">{error}</div> : null}
+          <div className="mchat-editor-actions">
+            <button
+              type="button"
+              className="secondary"
+              style={{ width: 'auto', minWidth: 140 }}
+              onClick={() => loadPreview('source')}
+            >
+              Preview Source PDF
+            </button>
+            <button
+              type="button"
+              className="mchat-publish-btn"
+              onClick={publishTemplate}
+              disabled={saving === 'publish' || saving === 'schema' || overlayFieldCount === 0}
+              title={
+                overlayFieldCount === 0
+                  ? 'Add at least one field on the PDF first'
+                  : 'Saves your mapping, then publishes for patient assignments'
+              }
+            >
+              {saving === 'publish' ? 'Publishing…' : schemaDirty ? 'Save & Publish Version' : 'Publish Version'}
+            </button>
+          </div>
+          {schemaDirty ? (
+            <p style={{ fontSize: 13, color: '#92400e', marginTop: 8 }}>
+              You have unsaved field changes. Publish will save your mapping automatically, or use{' '}
+              <strong>Save Field Mapping</strong> first.
+            </p>
+          ) : null}
+          {template.status === 'published' ? (
+            <p style={{ fontSize: 13, color: '#555', marginTop: 8 }}>
+              After changing the mapping, publish again and create a <strong>new patient assignment</strong> so the fill
+              link uses this version.
+            </p>
+          ) : null}
+          <p style={{ fontSize: 13, color: '#1a5f1a', padding: '8px 12px', background: '#ecfdf3', borderRadius: 6 }}>
+            <strong>M-CHAT overlay mode:</strong> Map Yes/No and text on the PDF. Parents fill on the PDF — not AcroForm.
+          </p>
+          {token ? (
+            <PdfVisualMapper
+              templateId={template.id}
+              token={token}
+              templateName={template.name}
+              schema={fieldSchema}
+              onSchemaChange={setFieldSchema}
+              onSave={saveFieldSchema}
+              saving={saving === 'schema'}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container">
       <div className="card">
@@ -740,7 +874,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
 
         {error ? <div className="error">{error}</div> : null}
 
-        <div className="actions" style={{ gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))' }}>
+        <div className="actions" style={{ gridTemplateColumns: 'repeat(5, minmax(100px, 1fr))' }}>
           <button className="secondary" onClick={() => loadPreview('source')}>
             Preview Source
           </button>
@@ -748,28 +882,82 @@ export function StaffTemplateEditorPage({ token }: Props) {
             className="secondary"
             onClick={() => loadPreview('acroform')}
             disabled={!template.acroform_pdf_path}
-            title={!template.acroform_pdf_path ? 'Click "Generate AcroForm" first' : 'Preview AcroForm PDF'}
+            title={!template.acroform_pdf_path ? 'Import fields or generate an AcroForm PDF first' : 'Preview AcroForm PDF'}
           >
             Preview AcroForm
           </button>
+          {!isMchatTemplate ? (
+          <button
+            type="button"
+            className="secondary"
+            disabled={Boolean(saving)}
+            onClick={async () => {
+              if (!token || !template) return;
+              setError('');
+              const hasFields = (template.fields?.length ?? 0) > 0;
+              let replace = false;
+              if (hasFields) {
+                replace = window.confirm(
+                  'This template already has field definitions. Replace them with fields imported from the PDF? (Existing manual mappings will be removed.)',
+                );
+                if (!replace) return;
+              }
+              try {
+                setSaving('import-acro');
+                const q = hasFields ? '?replace=1' : '';
+                await api(`/api/staff/templates/${template.id}/import-acrofields${q}`, {
+                  method: 'POST',
+                  headers: authHeader(token),
+                });
+                await loadTemplate();
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setSaving('');
+              }
+            }}
+          >
+            {saving === 'import-acro' ? 'Importing…' : 'Import PDF Fields'}
+          </button>
+          ) : null}
+          {!isMchatTemplate ? (
           <button onClick={generateAcroform} disabled={saving === 'generate'}>
             {saving === 'generate' ? 'Generating...' : 'Generate AcroForm'}
           </button>
+          ) : null}
           <button
             onClick={publishTemplate}
-            disabled={saving === 'publish' || !template.acroform_pdf_path}
-            title={!template.acroform_pdf_path ? 'Generate AcroForm before publishing' : ''}
+            disabled={
+              saving === 'publish' ||
+              (isMchatTemplate
+                ? overlayFieldCount === 0
+                : !template.acroform_pdf_path)
+            }
+            title={
+              isMchatTemplate
+                ? 'Publish when source PDF is uploaded and fields are mapped on the PDF'
+                : !template.acroform_pdf_path
+                  ? 'Import PDF fields or generate an AcroForm before publishing'
+                  : ''
+            }
           >
             {saving === 'publish' ? 'Publishing...' : 'Publish Version'}
           </button>
         </div>
         {!template.acroform_pdf_path && (
           <p style={{ fontSize: 13, color: '#888', marginTop: 6 }}>
-            No AcroForm generated yet — click <strong>Generate AcroForm</strong> after placing all fields.
+            No AcroForm yet — if your PDF already has fillable fields, click <strong>Import PDF Fields</strong> (the source file will be used as the AcroForm). Otherwise place fields on the mapper and click{' '}
+            <strong>Generate AcroForm</strong>.
+          </p>
+        )}
+        {template.acroform_pdf_path && template.acroform_pdf_path === template.source_pdf_path && (
+          <p style={{ fontSize: 13, color: '#1a5f1a', marginTop: 8, padding: '8px 12px', background: '#ecfdf3', borderRadius: 6 }}>
+            This version uses the <strong>embedded fillable PDF</strong> as the AcroForm (no separate generated overlay file). Publishing is allowed as soon as fields exist. For flat PDFs you would use <strong>Generate AcroForm</strong> instead.
           </p>
         )}
 
         {/* ─── Groups Panel ──────────────────────────────────────────── */}
+        <>
         <h3 style={{ marginTop: 24 }}>Field Groups</h3>
         <p style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>
           Create radio groups, checkbox groups, or boxed-input sequences before placing their fields.
@@ -902,7 +1090,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
             <input value={autoDraftFieldId} readOnly />
           </div>
           <div className="field">
-            <label>Question Label (field_name)</label>
+            <label>Question label (English)</label>
             <input
               value={newField.field_name}
               onChange={(event) => setNewField((prev) => ({ ...prev, field_name: event.target.value }))}
@@ -930,6 +1118,17 @@ export function StaffTemplateEditorPage({ token }: Props) {
               <option value="date">date</option>
               <option value="signature">signature</option>
             </select>
+          </div>
+        </div>
+
+        <div className="row">
+          <div className="field" style={{ flex: '1 1 320px' }}>
+            <label>Spanish label (optional)</label>
+            <input
+              value={newField.label_es}
+              onChange={(event) => setNewField((prev) => ({ ...prev, label_es: event.target.value }))}
+              placeholder="Second line on the parent form; PDF / Acro names stay the same"
+            />
           </div>
         </div>
 
@@ -1043,7 +1242,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
             />
           </div>
           <div className="field">
-            <label>Validation JSON</label>
+            <label>Validation JSON (omit <code>label_es</code> — use Spanish label field)</label>
             <textarea
               value={newField.validation_text}
               onChange={(event) => setNewField((prev) => ({ ...prev, validation_text: event.target.value }))}
@@ -1088,7 +1287,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
                   <input value={draft.field_id} readOnly />
                 </div>
                 <div className="field">
-                  <label>Question Label</label>
+                  <label>Question label (English)</label>
                   <input
                     value={draft.field_name}
                     onChange={(event) =>
@@ -1132,6 +1331,22 @@ export function StaffTemplateEditorPage({ token }: Props) {
                     <option value="signature">signature</option>
                     <option value="box_char">box_char</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="row">
+                <div className="field" style={{ flex: '1 1 320px' }}>
+                  <label>Spanish label (optional)</label>
+                  <input
+                    value={draft.label_es}
+                    onChange={(event) =>
+                      setEditing((prev) => ({
+                        ...prev,
+                        [field.id]: { ...draft, label_es: event.target.value },
+                      }))
+                    }
+                    placeholder="Second line on the parent form; PDF / Acro names stay the same"
+                  />
                 </div>
               </div>
 
@@ -1331,7 +1546,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
                   />
                 </div>
                 <div className="field">
-                  <label>Validation JSON</label>
+                  <label>Validation JSON (omit <code>label_es</code> — use Spanish label field)</label>
                   <textarea
                     value={draft.validation_text}
                     onChange={(event) =>
@@ -1358,6 +1573,7 @@ export function StaffTemplateEditorPage({ token }: Props) {
             </div>
           );
         })}
+        </>
 
         <h3 style={{ marginTop: 24 }}>PDF Preview</h3>
         <div className="row" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>

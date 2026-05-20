@@ -545,6 +545,39 @@ export function StaffPatientDetailPage({ token }: Props) {
     }
   }
 
+  async function exportSubmissionResponsesPdf(submissionId: string) {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/staff/submissions/${submissionId}/responses-pdf`, {
+        headers: authHeader(token),
+      });
+
+      if (!response.ok) {
+        let message = 'Failed to export responses PDF';
+        try {
+          const payload = await response.json();
+          message = payload?.error?.message ?? message;
+        } catch {
+          // ignore
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const fileName = parseDownloadFilename(response.headers.get('content-disposition'));
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function loadSubmissionResponses(submissionId: string) {
     if (!token) return;
     setLoadingResponsesFor(submissionId);
@@ -949,6 +982,9 @@ export function StaffPatientDetailPage({ token }: Props) {
             <div className="actions">
               <button onClick={() => exportSubmissionJson(submission.id)}>Export JSON</button>
               <button onClick={() => exportSubmissionPdf(submission.id)}>Export PDF</button>
+              <button className="secondary" onClick={() => exportSubmissionResponsesPdf(submission.id)}>
+                Responses PDF
+              </button>
             </div>
             <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
               {!submissionResponses[submission.id] ? (

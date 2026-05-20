@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
-import { GlobalWorkerOptions, getDocument, version } from 'pdfjs-dist';
+import { getDocument } from 'pdfjs-dist';
 import { authHeader } from '../lib/api';
+import { ensurePdfjsWorker } from '../lib/pdfjsSetup';
 
-GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
+ensurePdfjsWorker();
 
 type FieldLike = {
   id?: string;
@@ -58,9 +59,6 @@ type Props = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
-const WORKER_URL = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
-GlobalWorkerOptions.workerSrc = WORKER_URL;
-
 const HANDLE_SIZE = 8;
 const H = HANDLE_SIZE / 2;
 

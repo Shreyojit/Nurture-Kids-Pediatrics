@@ -87,8 +87,12 @@ export function StaffTemplatesPage({ token }: Props) {
     if (!token) return;
     setError('');
 
+    const publishedWarning =
+      template.status === 'published'
+        ? '\n\nThis is the active published form. It will be removed from the database and parents will no longer be able to start new assignments for this version.'
+        : '';
     const confirmed = window.confirm(
-      `Delete ${template.template_key} v${template.version}? This cannot be undone and removes its field definitions and generated PDF files.`,
+      `Delete "${template.name}" (${template.template_key} v${template.version})? This cannot be undone and removes field definitions, PDF files, and any pending assignments linked to this version.${publishedWarning}`,
     );
     if (!confirmed) return;
 
@@ -155,6 +159,7 @@ export function StaffTemplatesPage({ token }: Props) {
                 <th>Status</th>
                 <th>AcroForm</th>
                 <th>Action</th>
+                <th>Delete</th>
               </tr>
             </thead>
             <tbody>
@@ -170,21 +175,46 @@ export function StaffTemplatesPage({ token }: Props) {
                   </td>
                   <td>{template.acroform_pdf_path ? 'Generated' : 'Not generated'}</td>
                   <td>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <Link to={`/staff/templates/${template.id}/editor`}>Open Editor</Link>
-                      {template.status !== 'published' ? (
-                        <button
-                          className="secondary"
-                          style={{ width: 'auto', minHeight: 34, padding: '6px 10px' }}
-                          onClick={() => deleteVersion(template)}
-                          disabled={deletingId === template.id}
-                        >
-                          {deletingId === template.id ? 'Deleting...' : 'Delete Version'}
-                        </button>
+                    <Link to={`/staff/templates/${template.id}/editor`}>Open Editor</Link>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{
+                        width: 36,
+                        minHeight: 36,
+                        padding: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#b42318',
+                        borderColor: '#fecdca',
+                      }}
+                      onClick={() => deleteVersion(template)}
+                      disabled={deletingId === template.id}
+                      title={
+                        template.status === 'published'
+                          ? 'Delete published form from database'
+                          : 'Delete this template version'
+                      }
+                      aria-label={`Delete ${template.name} v${template.version}`}
+                    >
+                      {deletingId === template.id ? (
+                        <span style={{ fontSize: 11 }}>…</span>
                       ) : (
-                        <span style={{ fontSize: 12, color: '#5b6f8c' }}>Active version</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <path d="M3 6h18" strokeLinecap="round" />
+                          <path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" strokeLinecap="round" strokeLinejoin="round" />
+                          <path
+                            d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path d="M10 11v6M14 11v6" strokeLinecap="round" />
+                        </svg>
                       )}
-                    </div>
+                    </button>
                   </td>
                 </tr>
               ))}

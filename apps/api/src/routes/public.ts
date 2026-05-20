@@ -3,16 +3,20 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { config, resolveDataPath } from '../config.js';
+import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
 import { ok, fail } from '../lib/response.js';
 import { loadTemplate } from '../lib/templateLoader.js';
 import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
+import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
+import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
+import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
+import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
 import { parseJson } from '../db/database.js';
 import {
-  getActivePublishedTemplate,
   getTemplateBySubmissionContext,
   getTemplateWithFields,
   listPublishedTemplatesForPractice,
+  resolveIntakeTemplate,
 } from '../db/templateQueries.js';
 import {
   addSubmissionEvent,
@@ -33,6 +37,7 @@ export const publicRouter = Router();
 type DynamicTemplateField = {
   field_id: string;
   label: string;
+  label_es?: string;
   input_type: string;
   required: boolean;
   options: string[];
@@ -90,10 +95,14 @@ function mapTemplateForPatient(template: Record<string, unknown>) {
       typeof field.validation_json === 'object' && field.validation_json !== null
         ? (field.validation_json as Record<string, unknown>)
         : {};
+    const labelEsRaw = validation.label_es;
+    const label_es =
+      typeof labelEsRaw === 'string' && labelEsRaw.trim() ? String(labelEsRaw).trim() : undefined;
 
     step.fields.push({
       field_id: String(field.field_id ?? ''),
       label: String(field.field_name ?? ''),
+      ...(label_es ? { label_es } : {}),
       input_type: normalizeFieldType(String(field.field_type ?? 'text')),
       required: Boolean(field.required),
       options,
@@ -110,12 +119,32 @@ function mapTemplateForPatient(template: Record<string, unknown>) {
     });
   }
 
+  const templateKey = String(template.template_key ?? '');
+  const isMchat = isMchatTemplateKey(templateKey);
+  const field_schema = isMchat
+    ? parseTemplateFieldSchema(
+        typeof template.field_schema_json === 'string' ? template.field_schema_json : undefined,
+      )
+    : { fields: [] };
+  const pdf_overlay_ready = isMchat && hasOverlayFields(field_schema);
+
   return {
-    form_id: String(template.template_key ?? 'patient_registration'),
+    form_id: templateKey || 'patient_registration',
     template_id: String(template.id ?? ''),
     version: String(template.version ?? ''),
     title: String(template.name ?? 'Patient Registration'),
-    steps: Array.from(stepMap.values()),
+    ...(isMchat ? { field_schema, pdf_overlay_ready } : {}),
+    steps: (() => {
+      const steps = Array.from(stepMap.values());
+      if (
+        steps.length === 1 &&
+        (steps[0].title === 'Imported' || steps[0].title === 'General') &&
+        String(template.name ?? '').trim()
+      ) {
+        steps[0].title = String(template.name);
+      }
+      return steps;
+    })(),
     groups: sourceGroups,
     acroform_ready: Boolean(template.acroform_pdf_path),
   };
@@ -155,9 +184,14 @@ publicRouter.get('/forms/active/:slug', (req, res) => {
 
   const requestedTemplateKey = typeof req.query.template_key === 'string' ? req.query.template_key.trim() : '';
   if (requestedTemplateKey) {
-    const template = getActivePublishedTemplate(String(practice.id), requestedTemplateKey);
+    const template = resolveIntakeTemplate(String(practice.id), requestedTemplateKey);
     if (!template) {
-      fail(res, 'NOT_FOUND', `No published template found for "${requestedTemplateKey}"`, 404);
+      fail(
+        res,
+        'NOT_FOUND',
+        `No template found for "${requestedTemplateKey}"${isMchatTemplateKey(requestedTemplateKey) ? ' (upload a source PDF for mchat; publish optional)' : ''}`,
+        404,
+      );
       return;
     }
     ok(res, mapTemplateForPatient(template));
@@ -201,18 +235,18 @@ publicRouter.post('/submissions', (req, res) => {
   }
 
   const selectedTemplateKey = parsed.data.template_key ?? 'patient_registration';
-  const publishedTemplate = getActivePublishedTemplate(parsed.data.practice_id, selectedTemplateKey);
-  if (!publishedTemplate) {
+  const resolvedTemplate = resolveIntakeTemplate(parsed.data.practice_id, selectedTemplateKey);
+  if (!resolvedTemplate) {
     fail(
       res,
       'NO_ACTIVE_TEMPLATE',
-      `No published template found for "${selectedTemplateKey}". Staff must upload, generate, and publish this template first.`,
+      `No usable template found for "${selectedTemplateKey}".${isMchatTemplateKey(selectedTemplateKey) ? ' For M-CHAT-R, upload the PDF source (publish optional); for other forms, staff must publish a version first.' : ' Staff must upload, generate, and publish this template first.'}`,
       422,
     );
     return;
   }
 
-  const template = publishedTemplate as Record<string, unknown>;
+  const template = resolvedTemplate as Record<string, unknown>;
   const confirmationCode = `SP-${randomBytes(3).toString('hex').toUpperCase()}`;
 
   const initialPayload = {
@@ -335,7 +369,7 @@ publicRouter.get('/submissions/:id/template', (req, res) => {
   if (submission.template_id) {
     try {
       const template = getTemplateWithFields(submission.template_id, submission.practice_id);
-      const mapped = mapTemplateForPatient(template);
+      const mapped = mapTemplateForPatient(template as Record<string, unknown>);
       const responses = parseJson<Record<string, unknown>>(submission.responses_json, {});
       ok(res, {
         submission_id: submission.id,
@@ -390,6 +424,43 @@ publicRouter.get('/submissions/:id/acroform-pdf', (req, res) => {
   res.sendFile(pdfPath);
 });
 
+publicRouter.get('/submissions/:id/responses-pdf', async (req, res) => {
+  const submission = getSubmissionById(req.params.id);
+  if (!submission) {
+    fail(res, 'NOT_FOUND', 'Submission not found', 404);
+    return;
+  }
+  try {
+    const responses = parseJson<Record<string, unknown>>(submission.responses_json, {});
+    const ctx = getTemplateBySubmissionContext(submission.id);
+    const templateName = ctx?.template.name ?? String(submission.form_id ?? '');
+    const pdfBytes = await generateResponsesSummaryPdf({
+      title: 'Questionnaire responses',
+      subtitleLines: [
+        `Submission: ${submission.id}`,
+        `Form: ${String(submission.form_id ?? '')} · Template: ${templateName}`,
+        submission.submitted_at ? `Submitted: ${submission.submitted_at}` : 'Not yet submitted',
+        `Confirmation code: ${submission.confirmation_code}`,
+      ],
+      responses,
+    });
+    const form = parseJson<Record<string, unknown>>(submission.form_data_json, {});
+    const child = (form.patient as Record<string, unknown> | undefined)?.child as Record<string, unknown> | undefined;
+    const firstName = String(child?.first_name ?? 'patient');
+    const lastName = String(child?.last_name ?? 'unknown');
+    const safeName = `${firstName}_${lastName}`
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .replace(/_+/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}_responses.pdf"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (error) {
+    fail(res, 'RESPONSES_PDF_ERROR', (error as Error).message || 'Failed to build responses PDF', 500);
+  }
+});
+
 publicRouter.post('/submissions/:id/complete', (req, res) => {
   const submission = getSubmissionById(req.params.id);
   if (!submission) {
@@ -401,8 +472,44 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
     let completedPdfPath: string | null = null;
     const templateContext = getTemplateBySubmissionContext(submission.id);
 
-    if (templateContext?.template.acroform_pdf_path) {
-      const responseMap = parseJson<Record<string, unknown>>(submission.responses_json, {});
+    const templateKey = String(templateContext?.template.template_key ?? submission.form_id ?? '');
+    const responseMap = parseJson<Record<string, unknown>>(submission.responses_json, {});
+
+    const overlaySchema = parseTemplateFieldSchema(templateContext?.template.field_schema_json);
+    if (
+      templateContext &&
+      isMchatTemplateKey(templateKey) &&
+      hasOverlayFields(overlaySchema) &&
+      templateContext.template.source_pdf_path
+    ) {
+      const sourcePath = resolveDataPath(templateContext.template.source_pdf_path);
+      if (fs.existsSync(sourcePath)) {
+        const pdfBytes = await fillPdfWithOverlaySchema({
+          sourcePdfPath: sourcePath,
+          schema: overlaySchema,
+          responses: responseMap,
+        });
+        const form = parseJson<Record<string, unknown>>(submission.form_data_json, {});
+        const child = (form.patient as Record<string, unknown> | undefined)?.child as Record<string, unknown> | undefined;
+        const firstName = String(child?.first_name ?? 'patient');
+        const lastName = String(child?.last_name ?? 'unknown');
+        const safeName = `${firstName}_${lastName}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .replace(/_+/g, '_');
+        const safeTemplateKey = String(templateContext.template.template_key || 'form')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .replace(/_+/g, '_');
+        const submissionsDir = path.join(config.dataPath, 'submissions', submission.id);
+        fs.mkdirSync(submissionsDir, { recursive: true });
+        const absoluteCompleted = path.join(submissionsDir, `${safeName}_${safeTemplateKey}_completed.pdf`);
+        fs.writeFileSync(absoluteCompleted, Buffer.from(pdfBytes));
+        completedPdfPath = toRelativeDataPath(absoluteCompleted);
+      }
+    } else if (templateContext?.template.acroform_pdf_path) {
       const templateWithGroups = getTemplateWithFields(templateContext.template.id, templateContext.template.practice_id) as Record<string, unknown>;
       const pdfBytes = await fillAcroformPdfWithResponses({
         acroformPdfPath: resolveDataPath(templateContext.template.acroform_pdf_path),
@@ -446,8 +553,9 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
 
       const submissionsDir = path.join(config.dataPath, 'submissions', submission.id);
       fs.mkdirSync(submissionsDir, { recursive: true });
-      completedPdfPath = path.join(submissionsDir, `${safeName}_${safeTemplateKey}_completed.pdf`);
-      fs.writeFileSync(completedPdfPath, Buffer.from(pdfBytes));
+      const absoluteCompleted = path.join(submissionsDir, `${safeName}_${safeTemplateKey}_completed.pdf`);
+      fs.writeFileSync(absoluteCompleted, Buffer.from(pdfBytes));
+      completedPdfPath = toRelativeDataPath(absoluteCompleted);
     }
 
     const completed = completedPdfPath

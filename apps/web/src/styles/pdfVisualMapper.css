@@ -1,0 +1,353 @@
+/* M-CHAT / overlay PDF mapper — matches reference pdf-field-mapper layout */
+
+.mchat-editor-wrap {
+  width: min(1400px, 96vw);
+  margin: 0 auto;
+  padding: 24px 0 64px;
+}
+
+.mchat-editor-wrap .card {
+  padding: 20px 24px;
+}
+
+.mchat-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.mchat-editor-actions .mchat-publish-btn {
+  width: auto;
+  min-width: 160px;
+  background: #111827;
+  color: #fff;
+}
+
+.pdf-visual-mapper {
+  margin-top: 8px;
+}
+
+.pdf-visual-mapper .pdf-visual-hint {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0 0 16px;
+}
+
+.pdf-visual-mapper .gridLayout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.pdf-visual-mapper .sidePanel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  position: sticky;
+  top: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e5e7eb;
+}
+
+.pdf-visual-mapper .sidePanel h2,
+.pdf-visual-mapper .sidePanel h3 {
+  margin-top: 0;
+}
+
+.pdf-visual-mapper .divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 18px 0;
+}
+
+.pdf-visual-mapper .fieldBlock {
+  margin-bottom: 14px;
+}
+
+.pdf-visual-mapper .fieldBlock label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.pdf-visual-mapper .fieldBlock input,
+.pdf-visual-mapper .fieldBlock select {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  min-height: auto;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+}
+
+.pdf-visual-mapper .buttonStack {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.pdf-visual-mapper .buttonStack button {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+  font-weight: 600;
+  font-size: 14px;
+  min-height: auto;
+}
+
+.pdf-visual-mapper .buttonStack button:hover {
+  background: #f9fafb;
+}
+
+.pdf-visual-mapper .saveMappingBtn {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  background: #111827;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  min-height: auto;
+  margin-bottom: 12px;
+}
+
+.pdf-visual-mapper .saveMappingBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pdf-visual-mapper .message {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+
+.pdf-visual-mapper .fieldEditor {
+  margin-top: 18px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.pdf-visual-mapper .fieldEditor h4 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.pdf-visual-mapper .smallText {
+  font-size: 13px;
+  color: #374151;
+  margin: 0 0 10px;
+}
+
+.pdf-visual-mapper .deleteFieldBtn {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  font-weight: 600;
+  min-height: auto;
+  margin-top: 8px;
+}
+
+.pdf-visual-mapper .pdfArea {
+  min-height: 600px;
+}
+
+.pdf-visual-mapper .pdfLoading,
+.pdf-visual-mapper .pdfError {
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.pdf-visual-mapper .pdfError {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.pdf-visual-mapper .pageWrapper {
+  margin-bottom: 24px;
+}
+
+.pdf-visual-mapper .pageTitle {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #111827;
+}
+
+.pdf-visual-mapper .pageCanvas {
+  position: relative;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  display: inline-block;
+  line-height: 0;
+}
+
+.pdf-visual-mapper .pageCanvas .react-pdf__Page {
+  display: block;
+}
+
+.pdf-visual-mapper .pageCanvas .react-pdf__Page__canvas {
+  display: block;
+}
+
+.pdf-visual-mapper .mappedBox {
+  border: 2px solid #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  color: #991b1b;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  padding: 2px;
+  cursor: move;
+  z-index: 10;
+  box-sizing: border-box;
+}
+
+.pdf-visual-mapper .mappedBox.checkbox {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1e3a8a;
+}
+
+.pdf-visual-mapper .mappedBox.radioBox {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+  color: #166534;
+  border-radius: 50%;
+}
+
+/* Parent fill — same positioning context as admin mapper */
+.pdf-overlay-fill .pageWrapper {
+  margin-bottom: 24px;
+}
+
+.pdf-overlay-fill .pageTitle {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #111827;
+}
+
+.pdf-overlay-fill .pageCanvas {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.pdf-overlay-fill .pageCanvas .react-pdf__Page {
+  display: block;
+}
+
+.pdf-overlay-fill .pageCanvas .react-pdf__Page__canvas {
+  display: block;
+}
+
+.pdf-overlay-fill .pageFieldLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.pdf-overlay-fill .pageFieldLayer .pdfTextInput,
+.pdf-overlay-fill .pageFieldLayer .pdfCheckbox,
+.pdf-overlay-fill .pageFieldLayer .pdfRadio {
+  pointer-events: auto;
+}
+
+/* Parent fill overlays */
+.pdf-overlay-fill .pdfTextInput {
+  position: absolute;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.25);
+  border: 1px solid #2563eb;
+  padding: 2px;
+  outline: none;
+  color: #111827;
+  min-height: auto;
+  width: auto;
+}
+
+.pdf-overlay-fill .pdfCheckbox {
+  position: absolute;
+  z-index: 20;
+  border: 1px solid #2563eb;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  color: #111827;
+  font-weight: 700;
+  padding: 0;
+  min-height: auto;
+  width: auto;
+}
+
+.pdf-overlay-fill .pdfCheckbox.checked {
+  background: rgba(219, 234, 254, 0.5);
+}
+
+.pdf-overlay-fill .pdfRadio {
+  position: absolute;
+  z-index: 20;
+  border: 2px solid #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+  cursor: pointer;
+  border-radius: 50%;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.pdf-overlay-fill .pdfRadio:hover {
+  background: rgba(22, 163, 74, 0.22);
+}
+
+.pdf-overlay-fill .pdfRadio.selected {
+  border: 2px solid #111827;
+  background: rgba(22, 163, 74, 0.45);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+.pdf-overlay-fill .jsonBox {
+  background: #111827;
+  color: #d1d5db;
+  padding: 12px;
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 240px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .pdf-visual-mapper .gridLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-visual-mapper .sidePanel {
+    position: static;
+  }
+}

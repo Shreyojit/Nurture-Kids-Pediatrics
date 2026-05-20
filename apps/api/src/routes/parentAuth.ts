@@ -154,6 +154,7 @@ parentAuthRouter.get('/me', authMiddleware('parent'), (req, res) => {
 
 function inferVisitType(templateKey: string): 'new_patient' | 'well_child' | 'sick' | 'follow_up' {
   const key = templateKey.toLowerCase();
+  if (key === 'mchat' || key.includes('mchat') || key.includes('m-chat')) return 'well_child';
   if (key.includes('well')) return 'well_child';
   if (key.includes('sick')) return 'sick';
   if (key.includes('follow')) return 'follow_up';

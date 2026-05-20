@@ -13,6 +13,20 @@ type Props = {
   onChangeAll?: (updates: Record<string, any>) => void;
 };
 
+function BilingualFieldLabel({ en, es, fontSize }: { en: string; es?: string; fontSize?: number }) {
+  const fs = fontSize ?? 14;
+  const second = typeof es === 'string' ? es.trim() : '';
+  if (second) {
+    return (
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: fs }}>
+        <span>{en}</span>
+        <span style={{ fontStyle: 'italic', color: '#444' }}>{second}</span>
+      </span>
+    );
+  }
+  return <span style={{ fontSize: fs }}>{en}</span>;
+}
+
 // ─── Boxed Input Group ──────────────────────────────────────────────────────
 
 function BoxedInputGroup({
@@ -130,13 +144,19 @@ function RadioOptionGroup({
                 onChange={() => selectOption(opt)}
                 style={{ width: 18, height: 18 }}
               />
-              <span style={{ fontSize: opt.font_size ?? 14 }}>{opt.label}</span>
+              <span style={{ fontSize: opt.font_size ?? 14 }}>
+                <BilingualFieldLabel en={opt.label} es={opt.label_es} fontSize={opt.font_size ?? 14} />
+              </span>
             </label>
             {reasonField && isSelected && (
               <div style={{ marginLeft: 26, marginTop: 4 }}>
                 <input
                   type="text"
-                  placeholder={reasonField.label}
+                  placeholder={
+                    reasonField.label_es?.trim()
+                      ? `${reasonField.label} / ${reasonField.label_es.trim()}`
+                      : reasonField.label
+                  }
                   value={String(allValues[reasonField.field_id] ?? '')}
                   style={{ fontSize: reasonField.font_size ?? 13 }}
                   onChange={(e) => onChangeAll({ [reasonField.field_id]: e.target.value })}
@@ -175,7 +195,9 @@ function CheckboxGroupRenderer({
               onChange={(e) => onChangeAll({ [cb.field_id]: e.target.checked })}
               style={{ width: 18, height: 18 }}
             />
-            <span style={{ fontSize: cb.font_size ?? 14 }}>{cb.label}</span>
+            <span style={{ fontSize: cb.font_size ?? 14 }}>
+              <BilingualFieldLabel en={cb.label} es={cb.label_es} fontSize={cb.font_size ?? 14} />
+            </span>
           </label>
         ))}
       </div>
@@ -189,6 +211,46 @@ export function TemplateFieldInput({ field, value, onChange, error, allFields = 
   const inputType = field.input_type;
   const fontSize = field.font_size ?? 14;
 
+  if (inputType === 'boolean_yes_no') {
+    const optsEs = (field.validation_rules?.display_options_es as string[] | undefined) ?? ['Sí', 'No'];
+    const optsEn = field.options ?? ['Yes', 'No'];
+    const selected = value === true || value === false ? value : null;
+
+    return (
+      <div className="field">
+        <label>
+          <BilingualFieldLabel en={field.label} es={field.label_es} fontSize={fontSize} />
+          {field.required ? ' *' : ''}
+        </label>
+        <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}>
+              <input
+                type="radio"
+                name={field.field_id}
+                checked={selected === true}
+                onChange={() => onChange(true)}
+                style={{ width: 18, height: 18 }}
+              />
+              <span>{optsEn[0] ?? 'Yes'} / {optsEs[0] ?? 'Sí'}</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}>
+              <input
+                type="radio"
+                name={field.field_id}
+                checked={selected === false}
+                onChange={() => onChange(false)}
+                style={{ width: 18, height: 18 }}
+              />
+              <span>{optsEn[1] ?? 'No'} / {optsEs[1] ?? 'No'}</span>
+            </label>
+          </div>
+        </div>
+        {error ? <div className="error">{error}</div> : null}
+      </div>
+    );
+  }
+
   // ── box_char: rendered as a group from the first box in the sequence ──────
   if (inputType === 'box_char') {
     // Only render from the first box in the group (group_value === "0")
@@ -196,10 +258,16 @@ export function TemplateFieldInput({ field, value, onChange, error, allFields = 
     const groupFields = allFields.filter((f) => f.input_type === 'box_char' && f.group_id === field.group_id);
     if (groupFields.length === 0) return null;
     const group = allGroups.find((g) => g.id === field.group_id);
+    const firstWithEs = groupFields.find((f) => f.label_es?.trim());
+    const groupTitle = group?.group_name ?? field.label;
+    const groupTitleEs = firstWithEs?.label_es;
 
     return (
       <div className="field">
-        <label>{group?.group_name ?? field.label}{field.required ? ' *' : ''}</label>
+        <label>
+          <BilingualFieldLabel en={groupTitle} es={groupTitleEs} fontSize={fontSize} />
+          {field.required ? ' *' : ''}
+        </label>
         <BoxedInputGroup
           fields={groupFields}
           values={allValues}
@@ -218,10 +286,12 @@ export function TemplateFieldInput({ field, value, onChange, error, allFields = 
       // fallback: render as single radio if no group info available
       return (
         <div className="field">
-          <label>{field.label}</label>
+          <label>
+            <BilingualFieldLabel en={field.label} es={field.label_es} fontSize={fontSize} />
+          </label>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="radio" checked={Boolean(value)} onChange={() => onChange(true)} style={{ width: 18, height: 18 }} />
-            <span>{field.label}</span>
+            <BilingualFieldLabel en={field.label} es={field.label_es} fontSize={fontSize} />
           </label>
           {error ? <div className="error">{error}</div> : null}
         </div>
@@ -369,7 +439,7 @@ export function TemplateFieldInput({ field, value, onChange, error, allFields = 
   return (
     <div className="field">
       <label htmlFor={field.field_id}>
-        {field.label}
+        <BilingualFieldLabel en={field.label} es={field.label_es} fontSize={fontSize} />
         {field.required ? ' *' : ''}
       </label>
       {renderInput()}
