@@ -14,10 +14,21 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
 
-  const payload = await response.json();
+  const text = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error(
+      response.ok
+        ? `Server returned non-JSON response (${response.status})`
+        : `Server error ${response.status}: ${response.statusText || 'no response body'}`,
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(payload?.error?.message ?? 'Request failed');
+    const err = payload?.error as Record<string, unknown> | undefined;
+    throw new Error((err?.message as string) ?? 'Request failed');
   }
 
   return payload.data as T;

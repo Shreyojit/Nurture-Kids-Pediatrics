@@ -81,14 +81,14 @@ export function StaffPatientsPage({ token }: Props) {
               : '')
           : '';
       setUploadMsg(
-        `Inserted ${result.inserted}, skipped ${result.skipped}, total sheet rows ${result.total_rows}.${preview}${
+        `✅ Upload successful — inserted ${result.inserted}, skipped ${result.skipped}, total sheet rows ${result.total_rows}.${preview}${
           noteLines.length ? ` Notes: ${noteLines.join('; ')}` : ''
         }`,
       );
       if (fileRef.current) fileRef.current.value = '';
       await loadPatients();
     } catch (e) {
-      setError((e as Error).message);
+      setUploadMsg(`❌ Upload failed: ${(e as Error).message}`);
     } finally {
       setUploading(false);
     }
@@ -114,10 +114,20 @@ export function StaffPatientsPage({ token }: Props) {
             <input ref={fileRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" />
           </div>
           <button type="button" disabled={uploading || !token} onClick={() => void handleUploadExcel()}>
-            {uploading ? 'Uploading…' : 'Upload Excel'}
+            {uploading ? 'Uploading…' : 'Upload Appointments'}
           </button>
         </div>
-        {uploadMsg ? <p style={{ marginTop: '0.5rem' }}>{uploadMsg}</p> : null}
+        {uploadMsg ? (
+          <p
+            style={{
+              marginTop: '0.5rem',
+              color: uploadMsg.startsWith('✅') ? 'green' : 'red',
+              fontWeight: 500,
+            }}
+          >
+            {uploadMsg}
+          </p>
+        ) : null}
 
         {error ? <div className="error">{error}</div> : null}
 
