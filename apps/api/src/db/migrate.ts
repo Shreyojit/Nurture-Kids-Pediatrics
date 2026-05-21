@@ -542,8 +542,16 @@ function ensurePatientPortalToken(): void {
   const rows = db.prepare(`pragma table_info(patients)`).all() as Array<{ name: string }>;
   const names = new Set(rows.map((r) => r.name));
   if (!names.has('portal_token')) {
-    db.exec(`alter table patients add column portal_token text unique`);
+    // SQLite does not support ALTER TABLE ADD COLUMN with UNIQUE inline —
+    // add the column plain, then create a unique index separately.
+    db.exec(`alter table patients add column portal_token text`);
   }
+  // Ensure the unique index exists (idempotent via IF NOT EXISTS)
+  db.exec(`
+    create unique index if not exists idx_patients_portal_token
+    on patients(portal_token)
+    where portal_token is not null
+  `);
   // Backfill existing patients that have no token yet
   const missing = db
     .prepare(`select id from patients where portal_token is null`)
