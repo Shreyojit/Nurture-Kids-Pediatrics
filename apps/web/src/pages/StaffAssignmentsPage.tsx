@@ -33,6 +33,7 @@ type BundleResult = {
   template_names: string[];
   fill_url: string;
   qr_code_data_url: string;
+  portal_url?: string;
   expires_at: string;
 };
 
@@ -296,7 +297,7 @@ export function StaffAssignmentsPage({ token }: Props) {
   async function viewLink(a: AssignmentRecord) {
     if (!token) return;
     try {
-      const result = await api<{ fill_url: string; qr_code_data_url: string; bundle_id: string | null }>(
+      const result = await api<{ fill_url: string; qr_code_data_url: string; bundle_id: string | null; portal_url?: string }>(
         `/api/staff/assignments/${a.id}/link`,
         { headers: authHeader(token) },
       );
@@ -307,6 +308,7 @@ export function StaffAssignmentsPage({ token }: Props) {
         template_names: [a.template_name],
         fill_url: result.fill_url,
         qr_code_data_url: result.qr_code_data_url,
+        portal_url: result.portal_url,
         expires_at: a.expires_at,
       });
       setShowQrId(null);
@@ -546,21 +548,29 @@ export function StaffAssignmentsPage({ token }: Props) {
         {createdBundle && (
           <div style={{ marginTop: 16, padding: 16, background: '#fff', borderRadius: 8, border: '1px solid #b3d4f7' }}>
             <h3 style={{ marginTop: 0, marginBottom: 4 }}>
-              Bundle Created for <em>{createdBundle.patient_name}</em>
+              Assignment Created for <em>{createdBundle.patient_name}</em>
             </h3>
             <p style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
               Forms: {createdBundle.template_names.join(', ')}
             </p>
-            <p style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
-              Expires: {new Date(createdBundle.expires_at).toLocaleDateString()}
+            <p style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+              These assignments expire: {new Date(createdBundle.expires_at).toLocaleDateString()}
             </p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              <button onClick={() => copyLink('bundle', createdBundle.fill_url)}>
-                {copiedLinkId === 'bundle' ? 'Copied!' : 'Copy Link'}
-              </button>
-              <button className="secondary" onClick={() => setShowQrId(showQrId === 'bundle' ? null : 'bundle')}>
-                {showQrId === 'bundle' ? 'Hide QR' : 'Show QR'}
-              </button>
+            <div style={{ marginBottom: 12, padding: '10px 12px', background: '#eef6ff', borderRadius: 6, border: '1px solid #b3d4f7' }}>
+              <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#1a56db' }}>
+                Patient Portal Link (permanent)
+              </p>
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#555' }}>
+                Share this one link — all current and future assignments for this patient will appear here automatically.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => copyLink('bundle', createdBundle.fill_url)}>
+                  {copiedLinkId === 'bundle' ? 'Copied!' : 'Copy Portal Link'}
+                </button>
+                <button className="secondary" onClick={() => setShowQrId(showQrId === 'bundle' ? null : 'bundle')}>
+                  {showQrId === 'bundle' ? 'Hide QR' : 'Show QR Code'}
+                </button>
+              </div>
             </div>
             {showQrId === 'bundle' && (
               <img
