@@ -1,5 +1,8 @@
+import fs from 'node:fs';
 import path from 'node:path';
-import { db } from './database.js';
+import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
+import { db, nowIso } from './database.js';
 import { config } from '../config.js';
 
 export function runMigrations(): void {
@@ -350,6 +353,8 @@ export function runMigrations(): void {
   ensureTemplateSchemaColumn();
   migrateSubmissionsCheckConstraint();
   normalizeTemplatePaths();
+  ensurePatientPortalToken();
+  fixAsq30RadioGroups();
 }
 
 function ensureTemplateSchemaColumn(): void {
@@ -533,6 +538,22 @@ function ensureAppointmentsTable(): void {
   `);
 }
 
+function ensurePatientPortalToken(): void {
+  const rows = db.prepare(`pragma table_info(patients)`).all() as Array<{ name: string }>;
+  const names = new Set(rows.map((r) => r.name));
+  if (!names.has('portal_token')) {
+    db.exec(`alter table patients add column portal_token text unique`);
+  }
+  // Backfill existing patients that have no token yet
+  const missing = db
+    .prepare(`select id from patients where portal_token is null`)
+    .all() as Array<{ id: string }>;
+  const update = db.prepare(`update patients set portal_token = ? where id = ?`);
+  for (const row of missing) {
+    update.run(randomBytes(16).toString('hex'), row.id);
+  }
+}
+
 /** Move appointment fields from legacy patients columns into appointments, then drop those columns. */
 function migrateLegacyPatientAppointmentColumns(): void {
   const cols = db.prepare(`pragma table_info(patients)`).all() as Array<{ name: string }>;
@@ -589,4 +610,61 @@ function migrateLegacyPatientAppointmentColumns(): void {
       // SQLite without drop column support or column already removed
     }
   }
+}
+
+/**
+ * Applies correct group_id / group_value to all ASQ-30 radio_option fields from
+ * the seed data. Runs on every startup so deployments that skipped the seed
+ * (because they already had fields) still get the fix.
+ */
+function fixAsq30RadioGroups(): void {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const dataFile = path.join(__dirname, '..', 'seeds', 'templateSeedData.json');
+  if (!fs.existsSync(dataFile)) return;
+
+  type FieldRecord = { template_id: string; field_id: string; field_type: string; group_id: string | null; group_value: string | null };
+  type GroupRecord = { id: string; template_id: string; group_type: string; group_name: string; acro_group_name: string; created_at: string };
+
+  const { fields, groups } = JSON.parse(fs.readFileSync(dataFile, 'utf-8')) as {
+    fields: FieldRecord[];
+    groups: GroupRecord[];
+  };
+
+  const ASQ30_ID = '9b6d260c-9659-4740-85df-38c81bd7ceda';
+  const radioFields = fields.filter((f) => f.template_id === ASQ30_ID && f.field_type === 'radio_option');
+  const asqGroups = groups.filter((g) => g.template_id === ASQ30_ID);
+
+  const now = nowIso();
+
+  const insertGroup = db.prepare(`
+    insert or ignore into field_groups
+      (id, template_id, group_type, group_name, acro_group_name, created_at, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const updateField = db.prepare(`
+    update pdf_template_fields
+    set group_id = ?, group_value = ?, updated_at = ?
+    where template_id = ? and field_id = ?
+      and (group_id is not ? or group_value is not ?)
+  `);
+
+  db.transaction(() => {
+    for (const g of asqGroups) {
+      insertGroup.run(g.id, g.template_id, g.group_type, g.group_name, g.acro_group_name, g.created_at, now);
+    }
+    let updated = 0;
+    for (const f of radioFields) {
+      const result = updateField.run(
+        f.group_id ?? null, f.group_value ?? null, now,
+        ASQ30_ID, f.field_id,
+        f.group_id ?? null, f.group_value ?? null,
+      );
+      updated += result.changes;
+    }
+    if (updated > 0) {
+      console.log(`[migrate] fixAsq30RadioGroups: corrected ${updated} radio field group assignments`);
+    }
+  })();
 }
