@@ -98,7 +98,6 @@ export function ParentFormsPage({ token }: Props) {
             template_key: form.template_key,
             child_first_name: patient.child_first_name,
             child_last_name: patient.child_last_name,
-            child_dob: patient.child_dob,
             visit_type: form.visit_type,
           }),
         }
@@ -107,7 +106,6 @@ export function ParentFormsPage({ token }: Props) {
       setLocal(`pediform_start_${submission.session_id}`, {
         child_first_name: patient.child_first_name,
         child_last_name: patient.child_last_name,
-        child_dob: patient.child_dob,
         visit_type: form.visit_type,
         practice: practiceInfo,
         confirmation_code: submission.confirmation_code,

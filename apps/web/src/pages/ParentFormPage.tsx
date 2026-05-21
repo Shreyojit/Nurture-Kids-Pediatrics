@@ -46,10 +46,6 @@ export function ParentFormPage() {
       if (allFieldIds.has('child_last_name') && (merged.child_last_name ?? '') === '') {
         merged.child_last_name = start.child_last_name ?? '';
       }
-      if (allFieldIds.has('child_dob') && (merged.child_dob ?? '') === '') {
-        merged.child_dob = start.child_dob ?? '';
-      }
-
       setResponses(merged);
     });
   }, [sessionId]);

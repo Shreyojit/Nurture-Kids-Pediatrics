@@ -53,7 +53,6 @@ export function ParentDashboardPage({ token }: Props) {
               <strong>
                 {patient.child_first_name} {patient.child_last_name}
               </strong>
-              <div>DOB: {patient.child_dob}</div>
               <div>Visit Type: {patient.visit_type}</div>
             </div>
           ))}

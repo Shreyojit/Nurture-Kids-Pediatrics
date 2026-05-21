@@ -10,7 +10,6 @@
       "fields": [
         { "field_id": "child_first_name", "label": "Child First Name", "input_type": "text", "required": true, "data_path": "patient.child.first_name" },
         { "field_id": "child_last_name", "label": "Child Last Name", "input_type": "text", "required": true, "data_path": "patient.child.last_name" },
-        { "field_id": "child_dob", "label": "Date of Birth", "input_type": "date", "required": true, "data_path": "patient.child.dob" },
         { "field_id": "child_sex", "label": "Sex", "input_type": "select", "required": false, "options": ["Female", "Male", "Other", "Prefer not to say"], "data_path": "patient.child.sex" },
         { "field_id": "child_race_ethnicity", "label": "Race/Ethnicity", "input_type": "text", "required": false, "data_path": "patient.child.race_ethnicity" },
         { "field_id": "preferred_language", "label": "Preferred Language", "input_type": "text", "required": false, "data_path": "patient.child.preferred_language" }
@@ -49,12 +48,10 @@
       "fields": [
         { "field_id": "primary_company", "label": "Primary Insurance Company", "input_type": "text", "required": false, "data_path": "insurance.primary.company" },
         { "field_id": "primary_subscriber_name", "label": "Primary Subscriber Name", "input_type": "text", "required": false, "data_path": "insurance.primary.subscriber_name" },
-        { "field_id": "primary_subscriber_dob", "label": "Primary Subscriber DOB", "input_type": "date", "required": false, "data_path": "insurance.primary.subscriber_dob" },
         { "field_id": "primary_group", "label": "Primary Group #", "input_type": "text", "required": false, "data_path": "insurance.primary.group_number" },
         { "field_id": "primary_member", "label": "Primary Member ID", "input_type": "text", "required": false, "data_path": "insurance.primary.member_id" },
         { "field_id": "secondary_company", "label": "Secondary Insurance Company", "input_type": "text", "required": false, "data_path": "insurance.secondary.company" },
         { "field_id": "secondary_subscriber_name", "label": "Secondary Subscriber Name", "input_type": "text", "required": false, "data_path": "insurance.secondary.subscriber_name" },
-        { "field_id": "secondary_subscriber_dob", "label": "Secondary Subscriber DOB", "input_type": "date", "required": false, "data_path": "insurance.secondary.subscriber_dob" },
         { "field_id": "secondary_group", "label": "Secondary Group #", "input_type": "text", "required": false, "data_path": "insurance.secondary.group_number" },
         { "field_id": "secondary_member", "label": "Secondary Member ID", "input_type": "text", "required": false, "data_path": "insurance.secondary.member_id" }
       ]
