@@ -39,7 +39,6 @@ function clearFailures(token: string): void {
 const verifySchema = z.object({
   first_name: z.string().min(1),
   last_name: z.string().min(1),
-  dob: z.string().min(1),
 });
 
 // GET /api/portal/:token — confirm portal exists and return active form count only (no patient name)
@@ -71,7 +70,7 @@ portalRouter.post('/:token/verify', (req, res) => {
 
   const parsed = verifySchema.safeParse(req.body);
   if (!parsed.success) {
-    fail(res, 'VALIDATION_ERROR', 'first_name, last_name, and dob are required', 422);
+    fail(res, 'VALIDATION_ERROR', 'first_name and last_name are required', 422);
     return;
   }
 
@@ -84,11 +83,10 @@ portalRouter.post('/:token/verify', (req, res) => {
   const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
   if (
     normalize(parsed.data.first_name) !== normalize(patient.child_first_name as string) ||
-    normalize(parsed.data.last_name) !== normalize(patient.child_last_name as string) ||
-    parsed.data.dob !== patient.child_dob
+    normalize(parsed.data.last_name) !== normalize(patient.child_last_name as string)
   ) {
     recordFailure(token);
-    fail(res, 'IDENTITY_MISMATCH', 'Name or date of birth does not match our records', 403);
+    fail(res, 'IDENTITY_MISMATCH', 'Name does not match our records', 403);
     return;
   }
 

@@ -28,12 +28,10 @@ export function PatientPortalPage() {
   const [cachedIdentity, setCachedIdentity] = useState<{
     firstName: string;
     lastName: string;
-    dob: string;
   } | null>(null);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [dob, setDob] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -64,10 +62,10 @@ export function PatientPortalPage() {
         `/api/portal/${token}/verify`,
         {
           method: 'POST',
-          body: JSON.stringify({ first_name: firstName, last_name: lastName, dob }),
+          body: JSON.stringify({ first_name: firstName, last_name: lastName }),
         },
       );
-      setCachedIdentity({ firstName, lastName, dob });
+      setCachedIdentity({ firstName, lastName });
       setVerifiedName(result.patient_first_name);
       setVerified(result.assignments);
     } catch (e: unknown) {
@@ -88,7 +86,6 @@ export function PatientPortalPage() {
           body: JSON.stringify({
             first_name: cachedIdentity.firstName,
             last_name: cachedIdentity.lastName,
-            dob: cachedIdentity.dob,
           }),
         },
       );
@@ -226,20 +223,11 @@ export function PatientPortalPage() {
               />
             </div>
           </div>
-          <div className="field">
-            <label>Date of Birth</label>
-            <input
-              type="date"
-              value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              required
-            />
-          </div>
 
           {verifyError && (
             <div className="error" style={{ marginBottom: 12 }}>
               {verifyError.includes('does not match')
-                ? 'The name or date of birth you entered does not match our records. Please try again.'
+                ? 'The name you entered does not match our records. Please try again.'
                 : verifyError}
             </div>
           )}
