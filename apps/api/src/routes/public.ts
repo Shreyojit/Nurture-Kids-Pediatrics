@@ -31,6 +31,7 @@ import {
   getSubmissionById,
 } from '../db/queries.js';
 import { completeAssignmentBySubmissionId } from '../db/assignmentQueries.js';
+import { filterPatientRegistrationFields, isExcludedPatientDobField } from '../lib/patientPhiFields.js';
 
 export const publicRouter = Router();
 
@@ -78,6 +79,9 @@ function mapTemplateForPatient(template: Record<string, unknown>) {
   const stepMap = new Map<string, DynamicTemplateStep>();
 
   for (const field of sourceFields) {
+    const fieldId = String(field.field_id ?? '');
+    if (isExcludedPatientDobField(fieldId)) continue;
+
     const sectionTitle = String(field.section_key ?? 'General');
     const sectionKey = toStepId(sectionTitle || 'general');
 
@@ -216,7 +220,7 @@ const createSubmissionSchema = z.object({
   practice_id: z.string().uuid(),
   child_first_name: z.string().min(1),
   child_last_name: z.string().min(1),
-  child_dob: z.string().min(1),
+  child_dob: z.string().optional(),
   visit_type: z.enum(['new_patient', 'well_child', 'sick', 'follow_up']),
   template_key: z.string().min(1).optional(),
 });
@@ -249,24 +253,28 @@ publicRouter.post('/submissions', (req, res) => {
   const template = resolvedTemplate as Record<string, unknown>;
   const confirmationCode = `SP-${randomBytes(3).toString('hex').toUpperCase()}`;
 
+  const childDob = parsed.data.child_dob?.trim() ?? '';
+
   const initialPayload = {
     patient: {
       child: {
         first_name: parsed.data.child_first_name,
         last_name: parsed.data.child_last_name,
-        dob: parsed.data.child_dob,
+        ...(childDob ? { dob: childDob } : {}),
       },
     },
     visit_type: parsed.data.visit_type,
     template_key: selectedTemplateKey,
   };
 
-  const existingPatientId = findPatientIdByPracticeNameDob(
-    parsed.data.practice_id,
-    parsed.data.child_first_name,
-    parsed.data.child_last_name,
-    parsed.data.child_dob,
-  );
+  const existingPatientId = childDob
+    ? findPatientIdByPracticeNameDob(
+        parsed.data.practice_id,
+        parsed.data.child_first_name,
+        parsed.data.child_last_name,
+        childDob,
+      )
+    : undefined;
 
   const submission = createSubmission({
     practiceId: parsed.data.practice_id,
@@ -389,6 +397,10 @@ publicRouter.get('/submissions/:id/template', (req, res) => {
       submission_id: submission.id,
       visit_type: submission.visit_type,
       ...legacyTemplate,
+      steps: legacyTemplate.steps.map((step) => ({
+        ...step,
+        fields: filterPatientRegistrationFields(step.fields),
+      })),
       responses: {},
     });
   } catch {

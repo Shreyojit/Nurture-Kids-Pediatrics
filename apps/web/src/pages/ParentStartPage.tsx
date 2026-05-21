@@ -31,7 +31,6 @@ export function ParentStartPage({ parentToken }: Props) {
   const [form, setForm] = useState({
     child_first_name: '',
     child_last_name: '',
-    child_dob: '',
     visit_type: defaultVisitType,
   });
 
@@ -46,7 +45,6 @@ export function ParentStartPage({ parentToken }: Props) {
           ...prev,
           child_first_name: latest.child_first_name || prev.child_first_name,
           child_last_name: latest.child_last_name || prev.child_last_name,
-          child_dob: latest.child_dob || prev.child_dob,
         }));
       }
     }).catch(() => {});
@@ -54,7 +52,7 @@ export function ParentStartPage({ parentToken }: Props) {
 
   async function handleContinue() {
     setError('');
-    if (!form.child_first_name || !form.child_last_name || !form.child_dob || !form.visit_type) {
+    if (!form.child_first_name || !form.child_last_name || !form.visit_type) {
       setError('Please fill all required fields.');
       return;
     }
@@ -105,20 +103,14 @@ export function ParentStartPage({ parentToken }: Props) {
           <input value={form.child_last_name} onChange={(e) => setForm((prev) => ({ ...prev, child_last_name: e.target.value }))} />
         </div>
       </div>
-      <div className="row">
-        <div className="field">
-          <label>Date of Birth *</label>
-          <input type="date" value={form.child_dob} onChange={(e) => setForm((prev) => ({ ...prev, child_dob: e.target.value }))} />
-        </div>
-        <div className="field">
-          <label>Visit Type *</label>
-          <select value={form.visit_type} onChange={(e) => setForm((prev) => ({ ...prev, visit_type: e.target.value }))}>
-            <option value="new_patient">New Patient</option>
-            <option value="well_child">Well Child</option>
-            <option value="sick">Sick Visit</option>
-            <option value="follow_up">Follow-Up</option>
-          </select>
-        </div>
+      <div className="field">
+        <label>Visit Type *</label>
+        <select value={form.visit_type} onChange={(e) => setForm((prev) => ({ ...prev, visit_type: e.target.value }))}>
+          <option value="new_patient">New Patient</option>
+          <option value="well_child">Well Child</option>
+          <option value="sick">Sick Visit</option>
+          <option value="follow_up">Follow-Up</option>
+        </select>
       </div>
       {error ? <div className="error">{error}</div> : null}
       <button onClick={handleContinue} disabled={loading}>

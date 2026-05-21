@@ -76,7 +76,6 @@ const seedAll = db.transaction(() => {
   field({ field_id: 'child_first_name',             field_name: 'First Name',                 required: true,  section_key: S1, display_order: 20 });
   field({ field_id: 'child_middle_initial',         field_name: 'Middle Initial',                              section_key: S1, display_order: 30 });
   field({ field_id: 'child_sex',                    field_name: 'Sex',                        field_type: 'radio', required: true, options: ['Male', 'Female'], section_key: S1, display_order: 40 });
-  field({ field_id: 'child_dob',                    field_name: 'Date of Birth',              field_type: 'date', required: true, section_key: S1, display_order: 50 });
   field({ field_id: 'child_ssn',                    field_name: 'Social Security Number',                      section_key: S1, display_order: 60 });
   field({ field_id: 'child_home_phone',             field_name: 'Home Phone',                                  section_key: S1, display_order: 70 });
   field({ field_id: 'child_address',                field_name: 'Address',                    required: true,  section_key: S1, display_order: 80 });
@@ -92,7 +91,6 @@ const seedAll = db.transaction(() => {
   const S2 = '2. Guardian 1';
   field({ field_id: 'g1_type',           field_name: 'Relationship to Patient',  field_type: 'radio', required: true, options: ['Mother', 'Father', 'Other'], section_key: S2, display_order: 10 });
   field({ field_id: 'g1_name',           field_name: 'Full Name',                required: true,  section_key: S2, display_order: 20 });
-  field({ field_id: 'g1_dob',            field_name: 'Date of Birth',            field_type: 'date', section_key: S2, display_order: 30 });
   field({ field_id: 'g1_ssn',            field_name: 'Social Security Number',                    section_key: S2, display_order: 40 });
   field({ field_id: 'g1_email',          field_name: 'Email Address',            required: true,  section_key: S2, display_order: 50 });
   field({ field_id: 'g1_home_phone',     field_name: 'Home Phone',                                section_key: S2, display_order: 60 });
@@ -109,7 +107,6 @@ const seedAll = db.transaction(() => {
   const S3 = '3. Guardian 2 (if applicable)';
   field({ field_id: 'g2_type',           field_name: 'Relationship to Patient',  field_type: 'radio', options: ['Mother', 'Father', 'Other'], section_key: S3, display_order: 10 });
   field({ field_id: 'g2_name',           field_name: 'Full Name',                                 section_key: S3, display_order: 20 });
-  field({ field_id: 'g2_dob',            field_name: 'Date of Birth',            field_type: 'date', section_key: S3, display_order: 30 });
   field({ field_id: 'g2_ssn',            field_name: 'Social Security Number',                    section_key: S3, display_order: 40 });
   field({ field_id: 'g2_email',          field_name: 'Email Address',                             section_key: S3, display_order: 50 });
   field({ field_id: 'g2_home_phone',     field_name: 'Home Phone',                                section_key: S3, display_order: 60 });
@@ -126,10 +123,8 @@ const seedAll = db.transaction(() => {
   const S4 = '4. Insurance';
   field({ field_id: 'primary_insurance_company',    field_name: 'Primary Insurance Company',                   section_key: S4, display_order: 10 });
   field({ field_id: 'primary_policyholder_name',    field_name: 'Primary Policyholder Name',                   section_key: S4, display_order: 20 });
-  field({ field_id: 'primary_policyholder_dob',     field_name: 'Primary Policyholder Date of Birth', field_type: 'date', section_key: S4, display_order: 30 });
   field({ field_id: 'secondary_insurance_company',  field_name: 'Secondary Insurance Company',                 section_key: S4, display_order: 40 });
   field({ field_id: 'secondary_policyholder_name',  field_name: 'Secondary Policyholder Name',                 section_key: S4, display_order: 50 });
-  field({ field_id: 'secondary_policyholder_dob',   field_name: 'Secondary Policyholder Date of Birth', field_type: 'date', section_key: S4, display_order: 60 });
 
   // ── STEP 5: Medical History ───────────────────────────────────────────────
   const S5 = '5. Medical History';
