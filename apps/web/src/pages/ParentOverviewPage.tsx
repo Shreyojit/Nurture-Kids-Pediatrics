@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { getLocal } from '../lib/storage';
 import type { FormTemplate } from '../lib/types';
 
 export function ParentOverviewPage() {
@@ -9,17 +8,19 @@ export function ParentOverviewPage() {
   const navigate = useNavigate();
   const [template, setTemplate] = useState<FormTemplate | null>(null);
 
-  const localVisitType = getLocal<{ visit_type?: string }>(`pediform_start_${sessionId}`, {}).visit_type;
-
   useEffect(() => {
     api<FormTemplate>(`/api/submissions/${sessionId}/template`).then((t) => {
-      const visitType = t.visit_type || localVisitType;
       const isMchat = t.form_id === 'mchat' || /^mchat/i.test(t.form_id ?? '');
-      if (isMchat && t.pdf_overlay_ready && (t.field_schema?.fields?.length ?? 0) > 0) {
-        navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
+      if (isMchat) {
+        if (t.pdf_overlay_ready && (t.field_schema?.fields?.length ?? 0) > 0) {
+          navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
+        } else {
+          navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
+        }
         return;
       }
-      if (isMchat || visitType === 'new_patient' || t.form_id === 'patient_registration') {
+      // Non-MCHAT: gate on form_id, not visit_type (commit 106f492)
+      if (t.form_id === 'patient_registration') {
         navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
       } else if (t.acroform_ready) {
         navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
@@ -31,7 +32,7 @@ export function ParentOverviewPage() {
 
   if (!template) return null;
 
-  const isNewPatient = (template.visit_type || localVisitType) === 'new_patient' || template.form_id === 'patient_registration';
+  const isNewPatient = template.form_id === 'patient_registration';
 
   return (
     <div className="card mobile">
