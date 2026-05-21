@@ -21,28 +21,28 @@ beforeEach(() => resetAssignmentTables());
 // ── POST /api/staff/assignments ───────────────────────────────────────────────
 
 describe('POST /api/staff/assignments', () => {
-  it('creates an assignment and returns fill_url + qr_code_data_url', async () => {
+  it('creates a bundle and returns portal fill_url + qr_code_data_url', async () => {
     const res = await request(app)
       .post('/api/staff/assignments')
       .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ patient_id: TEST_PATIENT_ID, template_id: TEST_TEMPLATE_ID });
+      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID] });
 
     expect(res.status).toBe(200);
     const { data } = res.body;
-    expect(data.id).toBeTruthy();
-    expect(data.token).toHaveLength(32);
-    expect(data.status).toBe('pending');
-    expect(data.fill_url).toContain('/fill/');
+    expect(data.bundle_id).toBeTruthy();
+    expect(data.bundle_token).toBeTruthy();
+    expect(data.fill_url).toContain('/fill/portal/');
+    expect(data.portal_url).toContain('/fill/portal/');
     expect(data.qr_code_data_url).toMatch(/^data:image\/png;base64,/);
     expect(data.patient_name).toBe('Emma Smith');
-    expect(data.template_name).toBe('Test Registration Form');
+    expect(data.template_names).toContain('Test Registration Form');
   });
 
   it('respects expires_in_days', async () => {
     const res = await request(app)
       .post('/api/staff/assignments')
       .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ patient_id: TEST_PATIENT_ID, template_id: TEST_TEMPLATE_ID, expires_in_days: 14 });
+      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID], expires_in_days: 14 });
 
     expect(res.status).toBe(200);
     const diffDays =
@@ -54,7 +54,7 @@ describe('POST /api/staff/assignments', () => {
   it('returns 401 without an auth token', async () => {
     const res = await request(app)
       .post('/api/staff/assignments')
-      .send({ patient_id: TEST_PATIENT_ID, template_id: TEST_TEMPLATE_ID });
+      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID] });
 
     expect(res.status).toBe(401);
   });
@@ -64,7 +64,7 @@ describe('POST /api/staff/assignments', () => {
     const res = await request(app)
       .post('/api/staff/assignments')
       .set('Authorization', `Bearer ${parentJwt}`)
-      .send({ patient_id: TEST_PATIENT_ID, template_id: TEST_TEMPLATE_ID });
+      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID] });
 
     expect(res.status).toBe(403);
   });
@@ -92,7 +92,7 @@ describe('POST /api/staff/assignments', () => {
     const res = await request(app)
       .post('/api/staff/assignments')
       .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ patient_id: otherPatientId, template_id: TEST_TEMPLATE_ID });
+      .send({ patient_id: otherPatientId, template_ids: [TEST_TEMPLATE_ID] });
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
@@ -112,7 +112,7 @@ describe('POST /api/staff/assignments', () => {
     const res = await request(app)
       .post('/api/staff/assignments')
       .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ patient_id: TEST_PATIENT_ID, template_id: draftTemplateId });
+      .send({ patient_id: TEST_PATIENT_ID, template_ids: [draftTemplateId] });
 
     expect(res.status).toBe(404);
   });

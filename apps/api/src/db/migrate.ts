@@ -640,6 +640,13 @@ function fixAsq30RadioGroups(): void {
   };
 
   const ASQ30_ID = '9b6d260c-9659-4740-85df-38c81bd7ceda';
+
+  // Skip if the ASQ-30 template doesn't exist in this DB (e.g. test environments)
+  const templateExists = db
+    .prepare(`select 1 from pdf_templates where id = ?`)
+    .get(ASQ30_ID);
+  if (!templateExists) return;
+
   const radioFields = fields.filter((f) => f.template_id === ASQ30_ID && f.field_type === 'radio_option');
   const asqGroups = groups.filter((g) => g.template_id === ASQ30_ID);
 
