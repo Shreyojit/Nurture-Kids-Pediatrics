@@ -26,7 +26,7 @@ function ensureStaffAdmin(email: string, password: string, practiceId: string): 
 }
 
 export function seedDefaults(): void {
-  const existingPractice = db.prepare('select id from practices where slug = ?').get('sunshine-pediatrics') as
+  const existingPractice = db.prepare('select id from practices where slug = ?').get('nurturekidspediatrics') as
     | { id: string }
     | undefined;
 
@@ -38,8 +38,8 @@ export function seedDefaults(): void {
        values (?, ?, ?, ?, ?, ?)`,
     ).run(
       practiceId,
-      'Sunshine Pediatrics',
-      'sunshine-pediatrics',
+      'Nurture Kids Pediatrics',
+      'nurturekidspediatrics',
       null,
       stringifyJson({
         enabled_visit_types: ['new_patient', 'well_child', 'sick', 'follow_up'],

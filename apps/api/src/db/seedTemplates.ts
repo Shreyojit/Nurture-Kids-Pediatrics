@@ -102,9 +102,9 @@ export function seedTemplates(): void {
 
   const practice = db
     .prepare('select id from practices where slug = ?')
-    .get('sunshine-pediatrics') as { id: string } | undefined;
+    .get('nurturekidspediatrics') as { id: string } | undefined;
   if (!practice) {
-    console.warn('[seed] template seed skipped — practice "sunshine-pediatrics" not found');
+    console.warn('[seed] template seed skipped — practice "nurturekidspediatrics" not found');
     return;
   }
 

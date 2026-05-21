@@ -355,6 +355,18 @@ export function runMigrations(): void {
   normalizeTemplatePaths();
   ensurePatientPortalToken();
   fixAsq30RadioGroups();
+  renameSunshinePractice();
+}
+
+function renameSunshinePractice(): void {
+  const row = db
+    .prepare(`select id from practices where slug = 'sunshine-pediatrics'`)
+    .get() as { id: string } | undefined;
+  if (!row) return;
+  db.prepare(
+    `update practices set name = 'Nurture Kids Pediatrics', slug = 'nurturekidspediatrics' where slug = 'sunshine-pediatrics'`,
+  ).run();
+  console.log('[migrate] renameSunshinePractice: renamed to Nurture Kids Pediatrics');
 }
 
 function ensureTemplateSchemaColumn(): void {
