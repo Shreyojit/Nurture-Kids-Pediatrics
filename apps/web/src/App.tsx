@@ -3,6 +3,7 @@ import { AppNav } from './components/AppNav';
 import { getLocal, removeLocal, setLocal } from './lib/storage';
 import { AssignmentVerifyPage } from './pages/AssignmentVerifyPage';
 import { BundleVerifyPage } from './pages/BundleVerifyPage';
+import { PatientPortalPage } from './pages/PatientPortalPage';
 import { HomePage } from './pages/HomePage';
 import { ParentConfirmationPage } from './pages/ParentConfirmationPage';
 import { ParentCreateAccountPage } from './pages/ParentCreateAccountPage';
@@ -96,6 +97,7 @@ export function App() {
         )}
 
         {/* Assignment fill links — accessible in all modes */}
+        <Route path="/fill/portal/:token" element={<PatientPortalPage />} />
         <Route path="/fill/bundle/:token" element={<BundleVerifyPage />} />
         <Route path="/fill/:token" element={<AssignmentVerifyPage />} />
 

@@ -13,6 +13,7 @@ import {
   deleteAssignment,
 } from '../db/assignmentQueries.js';
 import { createBundleWithAssignments } from '../db/bundleQueries.js';
+import { ensurePatientPortalToken } from '../db/portalQueries.js';
 import { db, nowIso } from '../db/database.js';
 
 export const staffAssignmentsRouter = Router();
@@ -108,16 +109,22 @@ staffAssignmentsRouter.post('/', async (req, res) => {
     expiresInDays,
   });
 
-  const fillUrl = `${config.frontendUrl}/fill/bundle/${bundle.token}`;
-  const qrCodeDataUrl = await QRCode.toDataURL(fillUrl, { width: 300, margin: 2 });
+  const portalToken = ensurePatientPortalToken(patientId);
+  const portalUrl = `${config.frontendUrl}/fill/portal/${portalToken}`;
+  const portalQrCodeDataUrl = await QRCode.toDataURL(portalUrl, { width: 300, margin: 2 });
+
+  const bundleUrl = `${config.frontendUrl}/fill/bundle/${bundle.token}`;
 
   ok(res, {
     bundle_id: bundle.id,
     bundle_token: bundle.token,
     patient_name: patientName,
     template_names: (templates as Array<{ id: string; name: string }>).map((t) => t.name),
-    fill_url: fillUrl,
-    qr_code_data_url: qrCodeDataUrl,
+    fill_url: portalUrl,
+    qr_code_data_url: portalQrCodeDataUrl,
+    bundle_fill_url: bundleUrl,
+    portal_url: portalUrl,
+    portal_token: portalToken,
     expires_at: bundle.expires_at,
   });
 });
@@ -145,22 +152,13 @@ staffAssignmentsRouter.get('/:id/link', async (req, res) => {
     return;
   }
 
-  const row = assignment as typeof assignment & { bundle_id?: string };
-  if (row.bundle_id) {
-    const bundle = db
-      .prepare('select id, token from assignment_bundles where id = ?')
-      .get(row.bundle_id) as { id: string; token: string } | undefined;
-    if (bundle) {
-      const fillUrl = `${config.frontendUrl}/fill/bundle/${bundle.token}`;
-      const qrCodeDataUrl = await QRCode.toDataURL(fillUrl, { width: 300, margin: 2 });
-      ok(res, { fill_url: fillUrl, qr_code_data_url: qrCodeDataUrl, bundle_id: bundle.id });
-      return;
-    }
-  }
+  const portalToken = ensurePatientPortalToken(assignment.patient_id);
+  const portalUrl = `${config.frontendUrl}/fill/portal/${portalToken}`;
+  const qrCodeDataUrl = await QRCode.toDataURL(portalUrl, { width: 300, margin: 2 });
 
-  const fillUrl = `${config.frontendUrl}/fill/${assignment.token}`;
-  const qrCodeDataUrl = await QRCode.toDataURL(fillUrl, { width: 300, margin: 2 });
-  ok(res, { fill_url: fillUrl, qr_code_data_url: qrCodeDataUrl, bundle_id: null });
+  const row = assignment as typeof assignment & { bundle_id?: string };
+  const bundle_id = row.bundle_id ?? null;
+  ok(res, { fill_url: portalUrl, qr_code_data_url: qrCodeDataUrl, bundle_id, portal_url: portalUrl });
 });
 
 const smsSchema = z.object({
@@ -206,10 +204,12 @@ staffAssignmentsRouter.post('/bundle/:bundleId/send-sms', async (req, res) => {
     return;
   }
 
-  const fillUrl = `${config.frontendUrl}/fill/bundle/${bundle.token}`;
   const patient = db
     .prepare('select child_first_name from patients where id = ?')
     .get(bundle.patient_id) as { child_first_name: string } | undefined;
+
+  const portalToken = ensurePatientPortalToken(bundle.patient_id);
+  const fillUrl = `${config.frontendUrl}/fill/portal/${portalToken}`;
 
   const firstName = patient?.child_first_name ?? 'your child';
   const formCount = (db
@@ -278,10 +278,12 @@ staffAssignmentsRouter.post('/bundle/:bundleId/send-email', async (req, res) => 
     return;
   }
 
-  const fillUrl = `${config.frontendUrl}/fill/bundle/${bundle.token}`;
   const patient = db
     .prepare('select child_first_name, child_last_name from patients where id = ?')
     .get(bundle.patient_id) as { child_first_name: string; child_last_name: string } | undefined;
+
+  const portalToken2 = ensurePatientPortalToken(bundle.patient_id);
+  const fillUrl = `${config.frontendUrl}/fill/portal/${portalToken2}`;
 
   const patientName = patient
     ? `${patient.child_first_name} ${patient.child_last_name}`

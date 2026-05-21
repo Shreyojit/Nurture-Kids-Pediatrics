@@ -234,6 +234,9 @@ export function StaffPatientDetailPage({ token }: Props) {
   const [smsResult, setSmsResult] = useState('');
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [showQrId, setShowQrId] = useState<string | null>(null);
+  const [portalLink, setPortalLink] = useState<{ portal_url: string; qr_code_data_url: string } | null>(null);
+  const [portalLinkLoading, setPortalLinkLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   async function loadAssignments() {
     if (!token) return;
@@ -319,6 +322,39 @@ export function StaffPatientDetailPage({ token }: Props) {
       setSmsResult(`Failed: ${(e as Error).message}`);
     } finally {
       setSmsSending(false);
+    }
+  }
+
+  async function loadPortalLink() {
+    if (!token) return;
+    setPortalLinkLoading(true);
+    try {
+      const result = await api<{ portal_url: string; qr_code_data_url: string }>(
+        `/api/staff/patients/${id}/portal-link`,
+        { headers: authHeader(token) },
+      );
+      setPortalLink(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPortalLinkLoading(false);
+    }
+  }
+
+  async function handleRegeneratePortalToken() {
+    if (!token) return;
+    if (!window.confirm('This will invalidate the current portal link. The patient will need the new link to access their forms. Continue?')) return;
+    setRegenerating(true);
+    try {
+      const result = await api<{ portal_url: string; qr_code_data_url: string }>(
+        `/api/staff/patients/${id}/regenerate-portal-token`,
+        { method: 'POST', headers: authHeader(token) },
+      );
+      setPortalLink(result);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -692,6 +728,51 @@ export function StaffPatientDetailPage({ token }: Props) {
         <button onClick={saveCore} disabled={savingTable === 'core'}>
           {savingTable === 'core' ? 'Saving...' : 'Save Core'}
         </button>
+
+        {/* ── Patient Portal Link Panel ── */}
+        <div className="card" style={{ background: '#f0f7ff', marginBottom: 12, marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Patient Portal Link</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#555' }}>
+                One permanent link for all forms assigned to this patient.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!portalLink && (
+                <button className="secondary" onClick={loadPortalLink} disabled={portalLinkLoading}>
+                  {portalLinkLoading ? 'Loading...' : 'View Portal Link'}
+                </button>
+              )}
+              <button
+                className="secondary"
+                style={{ color: '#c00', borderColor: '#c00' }}
+                onClick={handleRegeneratePortalToken}
+                disabled={regenerating}
+              >
+                {regenerating ? 'Regenerating...' : 'Regenerate Link'}
+              </button>
+            </div>
+          </div>
+          {portalLink && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ padding: '8px 12px', background: '#eef6ff', borderRadius: 6, border: '1px solid #b3d4f7', fontSize: 13, marginBottom: 8, wordBreak: 'break-all' }}>
+                {portalLink.portal_url}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => copyLink('portal', portalLink.portal_url)}>
+                  {copiedLinkId === 'portal' ? 'Copied!' : 'Copy Link'}
+                </button>
+                <button className="secondary" onClick={() => setShowQrId(showQrId === 'portal' ? null : 'portal')}>
+                  {showQrId === 'portal' ? 'Hide QR' : 'Show QR'}
+                </button>
+              </div>
+              {showQrId === 'portal' && (
+                <img src={portalLink.qr_code_data_url} alt="Portal QR code" style={{ marginTop: 8, border: '1px solid #ddd', borderRadius: 4, display: 'block' }} />
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ── Form Assignment Panel ── */}
         <div className="card" style={{ background: '#f0f7ff', marginBottom: 20, marginTop: 8 }}>
