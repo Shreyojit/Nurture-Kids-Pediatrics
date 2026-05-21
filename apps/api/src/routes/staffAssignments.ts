@@ -14,7 +14,13 @@ import {
 } from '../db/assignmentQueries.js';
 import { createBundleWithAssignments } from '../db/bundleQueries.js';
 import { ensurePatientPortalToken } from '../db/portalQueries.js';
+import { findPracticeById } from '../db/queries.js';
 import { db, nowIso } from '../db/database.js';
+
+function practiceSlug(practiceId: string): string {
+  const practice = findPracticeById(practiceId) as { slug?: string } | undefined;
+  return practice?.slug ?? 'unknown';
+}
 
 export const staffAssignmentsRouter = Router();
 
@@ -110,10 +116,10 @@ staffAssignmentsRouter.post('/', async (req, res) => {
   });
 
   const portalToken = ensurePatientPortalToken(patientId);
-  const portalUrl = `${config.frontendUrl}/${config.practiceSlug}/fill/portal/${portalToken}`;
+  const portalUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/portal/${portalToken}`;
   const portalQrCodeDataUrl = await QRCode.toDataURL(portalUrl, { width: 300, margin: 2 });
 
-  const bundleUrl = `${config.frontendUrl}/${config.practiceSlug}/fill/bundle/${bundle.token}`;
+  const bundleUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/bundle/${bundle.token}`;
 
   ok(res, {
     bundle_id: bundle.id,
@@ -153,7 +159,7 @@ staffAssignmentsRouter.get('/:id/link', async (req, res) => {
   }
 
   const portalToken = ensurePatientPortalToken(assignment.patient_id);
-  const portalUrl = `${config.frontendUrl}/${config.practiceSlug}/fill/portal/${portalToken}`;
+  const portalUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/portal/${portalToken}`;
   const qrCodeDataUrl = await QRCode.toDataURL(portalUrl, { width: 300, margin: 2 });
 
   const row = assignment as typeof assignment & { bundle_id?: string };
@@ -209,7 +215,7 @@ staffAssignmentsRouter.post('/bundle/:bundleId/send-sms', async (req, res) => {
     .get(bundle.patient_id) as { child_first_name: string } | undefined;
 
   const portalToken = ensurePatientPortalToken(bundle.patient_id);
-  const fillUrl = `${config.frontendUrl}/${config.practiceSlug}/fill/portal/${portalToken}`;
+  const fillUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/portal/${portalToken}`;
 
   const firstName = patient?.child_first_name ?? 'your child';
   const formCount = (db
@@ -283,7 +289,7 @@ staffAssignmentsRouter.post('/bundle/:bundleId/send-email', async (req, res) => 
     .get(bundle.patient_id) as { child_first_name: string; child_last_name: string } | undefined;
 
   const portalToken2 = ensurePatientPortalToken(bundle.patient_id);
-  const fillUrl = `${config.frontendUrl}/${config.practiceSlug}/fill/portal/${portalToken2}`;
+  const fillUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/portal/${portalToken2}`;
 
   const patientName = patient
     ? `${patient.child_first_name} ${patient.child_last_name}`
@@ -341,7 +347,7 @@ staffAssignmentsRouter.post('/:id/send-sms', async (req, res) => {
     return;
   }
 
-  const fillUrl = `${config.frontendUrl}/${config.practiceSlug}/fill/${assignment.token}`;
+  const fillUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/${assignment.token}`;
 
   const patient = db
     .prepare('select child_first_name from patients where id = ?')
