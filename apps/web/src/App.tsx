@@ -97,6 +97,11 @@ export function App() {
         )}
 
         {/* Assignment fill links — accessible in all modes */}
+        {/* Practice-scoped URLs (new format: /:practice/fill/...) */}
+        <Route path="/:practice/fill/portal/:token" element={<PatientPortalPage />} />
+        <Route path="/:practice/fill/bundle/:token" element={<BundleVerifyPage />} />
+        <Route path="/:practice/fill/:token" element={<AssignmentVerifyPage />} />
+        {/* Legacy URLs without practice prefix — kept for backward compat */}
         <Route path="/fill/portal/:token" element={<PatientPortalPage />} />
         <Route path="/fill/bundle/:token" element={<BundleVerifyPage />} />
         <Route path="/fill/:token" element={<AssignmentVerifyPage />} />

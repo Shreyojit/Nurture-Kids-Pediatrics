@@ -16,6 +16,7 @@ export const config = {
   dbPath: process.env.DB_PATH ?? path.join(dataPath, 'pediform.db'),
   corsOrigin: process.env.CORS_ORIGIN ?? '*',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+  practiceSlug: process.env.PRACTICE_SLUG ?? 'nurturekidspediatrics',
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
     authToken: process.env.TWILIO_AUTH_TOKEN ?? '',
