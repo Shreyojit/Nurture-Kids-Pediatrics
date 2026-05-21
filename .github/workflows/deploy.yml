@@ -52,11 +52,12 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          PRACTICE_SLUG: ${{ secrets.PRACTICE_SLUG }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,EMAIL_FROM,FRONTEND_URL
+          envs: SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,EMAIL_FROM,FRONTEND_URL,PRACTICE_SLUG
           script: |
             pm2 stop pediform-api || true
             sudo rm -rf /var/app/dist /var/app/node_modules
@@ -65,7 +66,7 @@ jobs:
             tar -xzf /home/ec2-user/pediform-api.tar.gz -C /var/app
             rm /home/ec2-user/pediform-api.tar.gz
             touch /var/app/.env
-            for key in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS EMAIL_FROM FRONTEND_URL; do
+            for key in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS EMAIL_FROM FRONTEND_URL PRACTICE_SLUG; do
               val=$(eval echo \$$key)
               sed -i "/^${key}=/d" /var/app/.env
               echo "${key}=${val}" >> /var/app/.env
