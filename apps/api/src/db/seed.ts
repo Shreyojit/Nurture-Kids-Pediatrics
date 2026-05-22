@@ -26,6 +26,14 @@ function ensureStaffAdmin(email: string, password: string, practiceId: string): 
 }
 
 export function seedDefaults(): void {
+  try {
+    _seedDefaults();
+  } catch (err) {
+    console.error('[seed] seedDefaults failed (non-fatal):', err instanceof Error ? err.message : err);
+  }
+}
+
+function _seedDefaults(): void {
   const existingPractice = db.prepare('select id from practices where slug = ?').get('nurturekidspediatrics') as
     | { id: string }
     | undefined;
@@ -48,23 +56,36 @@ export function seedDefaults(): void {
     );
   }
 
-  const existingStaff = db.prepare('select id from staff_users where email = ?').get('admin@nurturekidspediatrics.com') as
+  const existingById = db.prepare('select id from staff_users where id = ?').get(SEED_STAFF_ID) as
     | { id: string }
     | undefined;
 
-  if (!existingStaff) {
-    db.prepare(
-      `insert into staff_users (id, email, password_hash, practice_id, role, is_active, created_at)
-       values (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
+  if (existingById) {
+    // Migrate email if it was set under an old practice name
+    db.prepare('update staff_users set email = ?, practice_id = ? where id = ? and email != ?').run(
+      'admin@nurturekidspediatrics.com',
+      practiceId,
       SEED_STAFF_ID,
       'admin@nurturekidspediatrics.com',
-      hashPassword('Admin@12345'),
-      practiceId,
-      'admin',
-      1,
-      nowIso(),
     );
+  } else {
+    const existingByEmail = db.prepare('select id from staff_users where email = ?').get(
+      'admin@nurturekidspediatrics.com',
+    ) as { id: string } | undefined;
+    if (!existingByEmail) {
+      db.prepare(
+        `insert into staff_users (id, email, password_hash, practice_id, role, is_active, created_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        SEED_STAFF_ID,
+        'admin@nurturekidspediatrics.com',
+        hashPassword('Admin@12345'),
+        practiceId,
+        'admin',
+        1,
+        nowIso(),
+      );
+    }
   }
 
   for (const admin of ADDITIONAL_ADMIN_USERS) {
