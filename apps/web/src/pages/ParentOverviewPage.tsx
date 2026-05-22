@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import type { FormTemplate } from '../lib/types';
 
 export function ParentOverviewPage() {
-  const { slug = 'sunshine-pediatrics', sessionId = '' } = useParams();
+  const { slug = 'nurturekidspediatrics', sessionId = '' } = useParams();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<FormTemplate | null>(null);
 

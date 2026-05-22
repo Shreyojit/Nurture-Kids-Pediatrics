@@ -15,7 +15,7 @@ type Props = {
 };
 
 export function ParentStartPage({ parentToken }: Props) {
-  const { slug = 'sunshine-pediatrics' } = useParams();
+  const { slug = 'nurturekidspediatrics' } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const templateKey = searchParams.get('template_key')?.trim() || '';

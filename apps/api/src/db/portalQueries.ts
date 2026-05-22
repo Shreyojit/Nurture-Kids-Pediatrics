@@ -67,8 +67,8 @@ export function getActiveAssignmentsForPortal(
        from form_assignments fa
        join pdf_templates t on t.id = fa.template_id
        where fa.patient_id = ? and fa.practice_id = ?
-         and fa.status in ('pending', 'in_progress')
-         and datetime(fa.expires_at) >= datetime('now')
+         and fa.status in ('pending', 'in_progress', 'completed')
+         and (fa.status = 'completed' or datetime(fa.expires_at) >= datetime('now'))
        order by fa.created_at asc`,
     )
     .all(patientId, practiceId) as Array<{

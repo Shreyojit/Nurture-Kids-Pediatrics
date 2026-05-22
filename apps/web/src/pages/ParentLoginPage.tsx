@@ -41,7 +41,7 @@ export function ParentLoginPage({ onAuthenticated }: Props) {
       {error ? <div className="error">{error}</div> : null}
       <button onClick={login}>Login</button>
       <p>
-        Need to register from intake first? <Link to="/p/sunshine-pediatrics">Start intake</Link>
+        Need to register from intake first? <Link to="/p/nurturekidspediatrics">Start intake</Link>
       </p>
     </div>
   );

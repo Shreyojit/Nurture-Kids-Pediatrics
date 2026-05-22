@@ -4,7 +4,7 @@ import { AnnotationMode, getDocument } from 'pdfjs-dist';
 import { PdfOverlayFillView } from '../components/PdfOverlayFillView';
 import { api } from '../lib/api';
 import { ensurePdfjsWorker } from '../lib/pdfjsSetup';
-import { getLocal, setLocal } from '../lib/storage';
+import { getLocal, removeLocal, setLocal } from '../lib/storage';
 import type { FormTemplate, TemplateField } from '../lib/types';
 
 ensurePdfjsWorker();
@@ -336,7 +336,7 @@ function renderField(
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function PdfFillPage() {
-  const { slug = 'sunshine-pediatrics', sessionId = '' } = useParams();
+  const { slug = 'nurturekidspediatrics', sessionId = '' } = useParams();
   const navigate = useNavigate();
 
   const [template, setTemplate] = useState<FormTemplate | null>(null);
@@ -436,7 +436,17 @@ export function PdfFillPage() {
         confirmation_code: completed.confirmation_code,
         completed: true,
       });
-      navigate(`/p/${slug}/session/${sessionId}/confirmation`);
+      const portalAssignments = getLocal<Array<{ session_id: string; status: string; practice_slug: string }>>('pediform_portal_assignments', []);
+      const nextForm = portalAssignments.find(
+        (a) => a.session_id !== sessionId && a.status !== 'completed',
+      );
+      if (nextForm) {
+        navigate(`/p/${nextForm.practice_slug}/session/${nextForm.session_id}/overview`);
+      } else {
+        const allDone = portalAssignments.length > 0;
+        if (allDone) removeLocal('pediform_portal_assignments');
+        navigate(`/p/${slug}/session/${sessionId}/confirmation`, { state: { allPortalFormsDone: allDone } });
+      }
     } catch (e) {
       setError((e as Error).message);
       setSubmitting(false);

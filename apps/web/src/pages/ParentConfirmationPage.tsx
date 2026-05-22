@@ -1,19 +1,25 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { getLocal } from '../lib/storage';
 
 export function ParentConfirmationPage() {
-  const { slug = 'sunshine-pediatrics', sessionId = '' } = useParams();
+  const { slug = 'nurturekidspediatrics', sessionId = '' } = useParams();
+  const { state } = useLocation();
   const start = getLocal<Record<string, any>>(`pediform_start_${sessionId}`, {});
   const isLoggedIn = Boolean(getLocal<string | null>('pediform_parent_token', null));
+  const allPortalFormsDone = Boolean((state as any)?.allPortalFormsDone);
 
   return (
     <div className="card mobile">
-      <h2>Paperwork Submitted</h2>
-      <p>Thank you! Your paperwork is complete. You do not need to fill it in again.</p>
+      <h2>{allPortalFormsDone ? 'All Forms Complete!' : 'Paperwork Submitted'}</h2>
+      <p>
+        {allPortalFormsDone
+          ? 'All your forms have been submitted. Thank you — your provider will be in touch.'
+          : 'Thank you! Your paperwork is complete. You do not need to fill it in again.'}
+      </p>
       <p>
         Confirmation Code: <strong>{start.confirmation_code ?? 'N/A'}</strong>
       </p>
-      {!isLoggedIn && (
+      {!allPortalFormsDone && !isLoggedIn && (
         <>
           <p style={{ marginTop: 16, color: '#4b5563' }}>
             <strong>Optional:</strong> Create an account to access your records in the future.

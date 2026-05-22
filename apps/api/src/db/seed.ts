@@ -48,7 +48,7 @@ export function seedDefaults(): void {
     );
   }
 
-  const existingStaff = db.prepare('select id from staff_users where email = ?').get('admin@sunshineclinic.com') as
+  const existingStaff = db.prepare('select id from staff_users where email = ?').get('admin@nurturekidspediatrics.com') as
     | { id: string }
     | undefined;
 
@@ -58,7 +58,7 @@ export function seedDefaults(): void {
        values (?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       SEED_STAFF_ID,
-      'admin@sunshineclinic.com',
+      'admin@nurturekidspediatrics.com',
       hashPassword('Admin@12345'),
       practiceId,
       'admin',

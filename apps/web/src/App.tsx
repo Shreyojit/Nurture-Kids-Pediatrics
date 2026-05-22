@@ -29,7 +29,7 @@ const isAdminOnly = APP_MODE === 'admin';
 const isPatientOnly = APP_MODE === 'patient';
 
 // Default practice slug for the patient portal landing
-const DEFAULT_SLUG = 'sunshine-pediatrics';
+const DEFAULT_SLUG = 'nurturekidspediatrics';
 
 export function App() {
   const [parentToken, setParentToken] = useState<string | null>(() => getLocal('pediform_parent_token', null));

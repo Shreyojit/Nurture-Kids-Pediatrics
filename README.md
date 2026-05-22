@@ -41,9 +41,9 @@ URLs:
 
 ## Seeded Defaults
 
-- Staff email: `admin@sunshineclinic.com`
+- Staff email: `admin@nurturekidspediatrics.com`
 - Staff password: `Admin@12345`
-- Practice slug: `sunshine-pediatrics`
+- Practice slug: `nurturekidspediatrics`
 
 ## First-Time Setup Requirement
 

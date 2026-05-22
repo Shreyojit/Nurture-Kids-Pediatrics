@@ -16,7 +16,7 @@ preserve any edits made in the production admin UI.
 From `$ARGUMENTS` extract (all optional — fall back to defaults):
 - `PROD_API_URL` — base URL of the production API, e.g. `http://3.15.224.150:4000`
   Default: `http://3.15.224.150:4000`
-- `STAFF_EMAIL` — Default: `admin@sunshineclinic.com`
+- `STAFF_EMAIL` — Default: `admin@nurturekidspediatrics.com`
 - `STAFF_PASSWORD` — Default: `Admin@12345`
 
 If arguments are blank, use the defaults above.
@@ -188,7 +188,7 @@ git push origin main
 |---|---|
 | Production API | `http://3.15.224.150:4000` |
 | Frontend | `http://3.15.224.150:3001` |
-| Staff login | `admin@sunshineclinic.com` / `Admin@12345` |
+| Staff login | `admin@nurturekidspediatrics.com` / `Admin@12345` |
 | Seed file | `apps/api/src/seeds/templateSeedData.json` |
 | Seed behaviour | Fields are only inserted once — seeder skips a template if it already has fields (DB is source of truth) |
 | SQLite quirks | `required` must be `0`/`1`; `options_json`/`validation_json` must be JSON strings |
