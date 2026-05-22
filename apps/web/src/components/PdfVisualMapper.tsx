@@ -38,7 +38,7 @@ function emptyTextField(pageNumber: number): FieldSchemaField {
   return {
     id: makeFieldId('text'),
     key: 'childName',
-    label: 'Child Name',
+    label: 'Patient name',
     type: 'text',
     page: pageNumber - 1,
     x: 80,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
+import { formatAssignmentStatus } from '../lib/staffLabels';
 
 type Props = {
   token: string | null;
@@ -686,7 +687,7 @@ export function StaffPatientDetailPage({ token }: Props) {
   return (
     <div className="container">
       <div className="card">
-        <Link to="/staff/patients">← Back to patients</Link>
+        <Link to="/staff/patients">← Back to today's patients</Link>
         <h2>
           Patient: {core.child_first_name} {core.child_last_name}
         </h2>
@@ -703,7 +704,7 @@ export function StaffPatientDetailPage({ token }: Props) {
             <input value={coreForm.child_last_name} onChange={(e) => setCoreForm((p) => ({ ...p, child_last_name: e.target.value }))} />
           </div>
           <div className="field">
-            <label>DOB</label>
+            <label>Date of birth</label>
             <input type="date" value={coreForm.child_dob} onChange={(e) => setCoreForm((p) => ({ ...p, child_dob: e.target.value }))} />
           </div>
           <div className="field">
@@ -777,9 +778,9 @@ export function StaffPatientDetailPage({ token }: Props) {
         {/* ── Form Assignment Panel ── */}
         <div className="card" style={{ background: '#f0f7ff', marginBottom: 20, marginTop: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>Assign Forms</h3>
+            <h3 style={{ margin: 0 }}>Send forms</h3>
             <button onClick={() => { setShowAssignForm((v) => !v); setCreatedBundle(null); }}>
-              {showAssignForm ? 'Cancel' : '+ Assign Forms'}
+              {showAssignForm ? 'Cancel' : '+ Send a form'}
             </button>
           </div>
 
@@ -801,7 +802,7 @@ export function StaffPatientDetailPage({ token }: Props) {
 
               <div style={{ marginBottom: 12 }}>
                 <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-                  Forms to Assign
+                  Forms to send
                   {selectedTemplateIds.length > 0 && (
                     <span style={{ fontWeight: 400, color: '#555', marginLeft: 8 }}>
                       ({selectedTemplateIds.length} selected)
@@ -809,7 +810,7 @@ export function StaffPatientDetailPage({ token }: Props) {
                   )}
                 </label>
                 {templates.length === 0 ? (
-                  <p style={{ fontSize: 13, color: '#888' }}>No published templates available.</p>
+                  <p style={{ fontSize: 13, color: '#888' }}>No active forms available.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {templates.map((t) => (
@@ -846,7 +847,7 @@ export function StaffPatientDetailPage({ token }: Props) {
               >
                 {assigning
                   ? 'Creating...'
-                  : `Create ${selectedTemplateIds.length > 1 ? `${selectedTemplateIds.length} Assignment Links` : 'Assignment Link'}`}
+                  : `Send ${selectedTemplateIds.length > 1 ? `${selectedTemplateIds.length} forms` : 'form'}`}
               </button>
             </div>
           )}
@@ -898,14 +899,14 @@ export function StaffPatientDetailPage({ token }: Props) {
 
           {assignments.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <h4 style={{ marginBottom: 8 }}>Existing Assignments</h4>
+              <h4 style={{ marginBottom: 8 }}>Sent forms</h4>
               <table className="table">
                 <thead>
                   <tr>
                     <th>Form</th>
                     <th>Status</th>
-                    <th>Assigned By</th>
-                    <th>Expires</th>
+                    <th>Sent by</th>
+                    <th>Link expires</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -921,7 +922,7 @@ export function StaffPatientDetailPage({ token }: Props) {
                           background: a.status === 'completed' ? '#d4edda' : a.status === 'expired' ? '#f8d7da' : a.status === 'in_progress' ? '#fff3cd' : '#cfe2ff',
                           color: a.status === 'completed' ? '#155724' : a.status === 'expired' ? '#721c24' : a.status === 'in_progress' ? '#856404' : '#084298',
                         }}>
-                          {a.status}
+                          {formatAssignmentStatus(a.status)}
                         </span>
                       </td>
                       <td>{a.assigned_by_email}</td>
@@ -953,7 +954,7 @@ export function StaffPatientDetailPage({ token }: Props) {
                               }
                             }}
                           >
-                            View Link
+                            Copy link
                           </button>
                         )}
                         <button

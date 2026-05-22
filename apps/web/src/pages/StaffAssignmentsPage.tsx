@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
+import { formatAssignmentStatus } from '../lib/staffLabels';
 
 type Props = {
   token: string | null;
@@ -329,7 +330,7 @@ export function StaffAssignmentsPage({ token }: Props) {
     <div className="container">
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0 }}>Form Assignments</h2>
+          <h2 style={{ margin: 0 }}>Forms sent to families</h2>
           <button
             onClick={() => {
               setShowForm((v) => !v);
@@ -337,7 +338,7 @@ export function StaffAssignmentsPage({ token }: Props) {
               setError('');
             }}
           >
-            {showForm ? 'Cancel' : '+ New Assignment'}
+            {showForm ? 'Cancel' : '+ Send a form'}
           </button>
         </div>
 
@@ -345,7 +346,7 @@ export function StaffAssignmentsPage({ token }: Props) {
 
         {showForm && (
           <div className="card" style={{ background: '#f0f7ff', marginTop: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Create Assignment</h3>
+            <h3 style={{ marginTop: 0 }}>Send a form</h3>
 
             {/* Patient mode toggle */}
             <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid #c5d8f0', width: 'fit-content' }}>
@@ -420,7 +421,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                           onMouseLeave={(e) => (e.currentTarget.style.background = '')}
                         >
                           <div style={{ fontWeight: 600 }}>{p.child_first_name} {p.child_last_name}</div>
-                          <div style={{ fontSize: 12, color: '#666' }}>DOB: {p.child_dob}{p.account_email ? ` · ${p.account_email}` : ''}</div>
+                          <div style={{ fontSize: 12, color: '#666' }}>Date of birth: {p.child_dob}{p.account_email ? ` · ${p.account_email}` : ''}</div>
                         </div>
                       ))}
                     </div>
@@ -447,7 +448,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                   <div style={{ marginTop: 8, padding: '8px 12px', background: '#dbeafe', borderRadius: 6, border: '1px solid #3b82f6', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, maxWidth: 360 }}>
                     <span style={{ flex: 1 }}>
                       <strong>{selectedPatient.child_first_name} {selectedPatient.child_last_name}</strong>
-                      <span style={{ color: '#555', marginLeft: 8 }}>DOB: {selectedPatient.child_dob}</span>
+                      <span style={{ color: '#555', marginLeft: 8 }}>Date of birth: {selectedPatient.child_dob}</span>
                     </span>
                     <button
                       onClick={() => { setSelectedPatient(null); setSearchQuery(''); }}
@@ -491,7 +492,7 @@ export function StaffAssignmentsPage({ token }: Props) {
 
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
-                Forms to Assign
+                Forms to send
                 {selectedTemplateIds.length > 0 && (
                   <span style={{ fontWeight: 400, color: '#555', marginLeft: 8 }}>
                     ({selectedTemplateIds.length} selected)
@@ -499,7 +500,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                 )}
               </label>
               {templates.length === 0 ? (
-                <p style={{ fontSize: 13, color: '#888' }}>No published templates available.</p>
+                <p style={{ fontSize: 13, color: '#888' }}>No active forms available.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {templates.map((t) => (
@@ -535,7 +536,7 @@ export function StaffAssignmentsPage({ token }: Props) {
             >
               {submitting
                 ? 'Creating...'
-                : `Create ${selectedTemplateIds.length > 1 ? `${selectedTemplateIds.length} Assignment Links` : 'Assignment Link'}`}
+                : `Send ${selectedTemplateIds.length > 1 ? `${selectedTemplateIds.length} forms` : 'form'}`}
             </button>
             {patientMode === 'new' && (
               <p style={{ fontSize: 12, color: '#666', marginTop: 8, marginBottom: 0 }}>
@@ -548,7 +549,7 @@ export function StaffAssignmentsPage({ token }: Props) {
         {createdBundle && (
           <div style={{ marginTop: 16, padding: 16, background: '#fff', borderRadius: 8, border: '1px solid #b3d4f7' }}>
             <h3 style={{ marginTop: 0, marginBottom: 4 }}>
-              Assignment Created for <em>{createdBundle.patient_name}</em>
+              Form sent to <em>{createdBundle.patient_name}</em>
             </h3>
             <p style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
               Forms: {createdBundle.template_names.join(', ')}
@@ -628,16 +629,16 @@ export function StaffAssignmentsPage({ token }: Props) {
 
         {assignments.length > 0 && (
           <div style={{ marginTop: 24 }}>
-            <h3>All Assignments</h3>
+            <h3>All sent forms</h3>
             <table className="table">
               <thead>
                 <tr>
                   <th>Patient</th>
-                  <th>DOB</th>
+                  <th>Date of birth</th>
                   <th>Form</th>
                   <th>Status</th>
-                  <th>Assigned By</th>
-                  <th>Expires</th>
+                  <th>Sent by</th>
+                  <th>Link expires</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -647,7 +648,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                     <td>{a.child_first_name} {a.child_last_name}</td>
                     <td>{a.child_dob}</td>
                     <td>{a.template_name}</td>
-                    <td><span style={statusStyle(a.status)}>{a.status}</span></td>
+                    <td><span style={statusStyle(a.status)}>{formatAssignmentStatus(a.status)}</span></td>
                     <td>{a.assigned_by_email}</td>
                     <td>{new Date(a.expires_at).toLocaleDateString()}</td>
                     <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -657,7 +658,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                           style={{ fontSize: 12, padding: '2px 8px' }}
                           onClick={() => viewLink(a)}
                         >
-                          View Link
+                          Copy link
                         </button>
                       )}
                       <button
@@ -676,7 +677,7 @@ export function StaffAssignmentsPage({ token }: Props) {
         )}
 
         {assignments.length === 0 && !showForm && (
-          <p style={{ marginTop: 24, color: '#666' }}>No assignments yet. Click "+ New Assignment" to get started.</p>
+          <p style={{ marginTop: 24, color: '#666' }}>No forms sent yet. Click "+ Send a form" to get started.</p>
         )}
       </div>
     </div>

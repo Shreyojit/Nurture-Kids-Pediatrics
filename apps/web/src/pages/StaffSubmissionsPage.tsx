@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
+import { formatSubmissionStatus } from '../lib/staffLabels';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
@@ -21,7 +22,14 @@ type Submission = {
   template_name: string | null;
 };
 
-const STATUS_OPTIONS = ['all', 'in_progress', 'completed', 'exported'];
+const STATUS_OPTIONS = ['all', 'in_progress', 'completed', 'exported'] as const;
+
+const STATUS_FILTER_LABELS: Record<(typeof STATUS_OPTIONS)[number], string> = {
+  all: 'All statuses',
+  in_progress: 'Started',
+  completed: 'Completed',
+  exported: 'Downloaded',
+};
 
 export function StaffSubmissionsPage({ token }: Props) {
   const navigate = useNavigate();
@@ -133,14 +141,14 @@ export function StaffSubmissionsPage({ token }: Props) {
   return (
     <div className="container">
       <div className="card">
-        <h2>All Submissions</h2>
-        <p>Every form submitted by parents. View or download the filled form PDF after submit.</p>
+        <h2>Completed forms</h2>
+        <p>Every form completed by families. Preview or download the filled PDF once the form is done.</p>
         {error ? <div className="error">{error}</div> : null}
 
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="search"
-            placeholder="Search by patient, form, confirmation code…"
+            placeholder="Search by patient, form, or reference #…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ flex: 1, minWidth: 220 }}
@@ -151,7 +159,7 @@ export function StaffSubmissionsPage({ token }: Props) {
             style={{ width: 160 }}
           >
             {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>{s === 'all' ? 'All statuses' : s}</option>
+              <option key={s} value={s}>{STATUS_FILTER_LABELS[s]}</option>
             ))}
           </select>
           {(search || statusFilter !== 'all') && (
@@ -173,10 +181,10 @@ export function StaffSubmissionsPage({ token }: Props) {
             <tr>
               <th>Patient</th>
               <th>Form</th>
-              <th>DOB</th>
+              <th>Date of birth</th>
               <th>Status</th>
-              <th>Confirmation</th>
-              <th>Submitted</th>
+              <th>Reference #</th>
+              <th>Completed on</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -197,7 +205,7 @@ export function StaffSubmissionsPage({ token }: Props) {
                       borderRadius: 4,
                       fontSize: 12,
                     }}>
-                      {s.status}
+                      {formatSubmissionStatus(s.status)}
                     </span>
                   </td>
                   <td>{s.confirmation_code}</td>
@@ -211,7 +219,7 @@ export function StaffSubmissionsPage({ token }: Props) {
                           disabled={viewingId === s.id || downloadingId === s.id}
                           onClick={() => viewPdf(s.id)}
                         >
-                          {viewingId === s.id ? 'Opening...' : 'View PDF'}
+                          {viewingId === s.id ? 'Opening...' : 'Preview'}
                         </button>
                         <button
                           style={{ padding: '4px 12px', fontSize: 13, width: 'auto', minHeight: 34 }}
@@ -222,10 +230,10 @@ export function StaffSubmissionsPage({ token }: Props) {
                         </button>
                       </>
                     ) : (
-                      <span style={{ color: '#9ca3af', fontSize: 13 }}>Form PDF after submit</span>
+                      <span style={{ color: '#9ca3af', fontSize: 13 }}>Available once completed</span>
                     )}
                     {s.patient_id ? (
-                      <Link to={`/staff/patients/${s.patient_id}`} style={{ fontSize: 13 }}>View Patient</Link>
+                      <Link to={`/staff/patients/${s.patient_id}`} style={{ fontSize: 13 }}>Open patient</Link>
                     ) : null}
                   </td>
                 </tr>
@@ -233,7 +241,7 @@ export function StaffSubmissionsPage({ token }: Props) {
             })}
             {filtered.length === 0 ? (
               <tr><td colSpan={7} style={{ textAlign: 'center', color: '#6b7280' }}>
-                {submissions.length === 0 ? 'No submissions yet.' : 'No submissions match your search.'}
+                {submissions.length === 0 ? 'No completed forms yet.' : 'No forms match your search.'}
               </td></tr>
             ) : null}
           </tbody>

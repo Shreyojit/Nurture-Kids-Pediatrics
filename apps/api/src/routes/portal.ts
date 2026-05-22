@@ -2,7 +2,12 @@ import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { ok, fail } from '../lib/response.js';
-import { getPatientByPortalToken, getActiveAssignmentsForPortal } from '../db/portalQueries.js';
+import {
+  getPatientByPortalToken,
+  getActiveAssignmentsForPortal,
+  getPortalAssignmentsForPatient,
+  getPatientNextAppointment,
+} from '../db/portalQueries.js';
 import { updateAssignment } from '../db/assignmentQueries.js';
 import { createSubmission, addSubmissionEvent, findPracticeById } from '../db/queries.js';
 import { getTemplateWithFields } from '../db/templateQueries.js';
@@ -49,6 +54,7 @@ portalRouter.get('/:token', (req, res) => {
     return;
   }
 
+  const practice = findPracticeById(patient.practice_id as string);
   const assignments = getActiveAssignmentsForPortal(
     patient.id as string,
     patient.practice_id as string,
@@ -56,6 +62,7 @@ portalRouter.get('/:token', (req, res) => {
 
   ok(res, {
     assignment_count: assignments.length,
+    practice_name: practice?.name ?? 'Your pediatric practice',
   });
 });
 
@@ -99,12 +106,15 @@ portalRouter.post('/:token/verify', (req, res) => {
     return;
   }
 
-  const assignments = getActiveAssignmentsForPortal(
+  const appointment = getPatientNextAppointment(patient.id as string);
+  const assignments = getPortalAssignmentsForPatient(
     patient.id as string,
     patient.practice_id as string,
   );
 
-  const results = assignments.map((assignment) => {
+  const results = assignments
+    .filter((a) => a.status !== 'completed')
+    .map((assignment) => {
     // Reuse an existing in_progress or completed submission if present
     if (assignment.submission_id) {
       const existing = db
@@ -114,6 +124,7 @@ portalRouter.post('/:token/verify', (req, res) => {
         return {
           assignment_id: assignment.id,
           template_name: assignment.template_name,
+          template_key: assignment.template_key,
           session_id: existing.id,
           practice_slug: practice.slug,
           template_id: assignment.template_id,
@@ -169,6 +180,7 @@ portalRouter.post('/:token/verify', (req, res) => {
     return {
       assignment_id: assignment.id,
       template_name: assignment.template_name,
+      template_key: assignment.template_key,
       session_id: submission.id,
       practice_slug: String(practice.slug),
       template_id: String(template.id),
@@ -176,8 +188,33 @@ portalRouter.post('/:token/verify', (req, res) => {
     };
   });
 
+  const completed = assignments
+    .filter((a) => a.status === 'completed')
+    .map((assignment) => {
+      let sessionId = assignment.submission_id;
+      if (sessionId) {
+        const existing = db
+          .prepare('select id, status from submissions where id = ?')
+          .get(sessionId) as { id: string; status: string } | undefined;
+        if (!existing) sessionId = null;
+      }
+      return {
+        assignment_id: assignment.id,
+        template_name: assignment.template_name,
+        template_key: assignment.template_key,
+        session_id: sessionId,
+        practice_slug: practice.slug,
+        template_id: assignment.template_id,
+        status: 'completed' as const,
+      };
+    })
+    .filter((a) => a.session_id);
+
   ok(res, {
     patient_first_name: patient.child_first_name,
-    assignments: results.filter(Boolean),
+    practice_name: practice.name,
+    next_appointment_date: appointment?.next_appointment_date ?? null,
+    next_appointment_time: appointment?.next_appointment_time ?? null,
+    assignments: [...results.filter(Boolean), ...completed],
   });
 });
