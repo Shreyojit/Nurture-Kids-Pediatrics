@@ -5,6 +5,7 @@ import { PdfFieldMapper } from '../components/PdfFieldMapper';
 import { PdfVisualMapper } from '../components/PdfVisualMapper';
 import '../styles/pdfVisualMapper.css';
 import { EMPTY_FIELD_SCHEMA, type TemplateFieldSchema } from '../lib/fieldSchema';
+import { formatTemplateStatus } from '../lib/staffLabels';
 
 type Props = {
   token: string | null;
@@ -798,13 +799,13 @@ export function StaffTemplateEditorPage({ token }: Props) {
     return (
       <div className="mchat-editor-wrap">
         <div className="card">
-          <Link to="/staff/templates">← Back to Templates</Link>
+          <Link to="/staff/templates">← Back to your forms</Link>
           <h2>
             {template.name} (v{template.version})
           </h2>
           <p>
-            Key: <span className="badge">{template.template_key}</span> Status:{' '}
-            <span className="badge">{template.status}</span>
+            Form ID: <span className="badge">{template.template_key}</span> Status:{' '}
+            <span className="badge">{formatTemplateStatus(template.status)}</span>
           </p>
           {error ? <div className="error">{error}</div> : null}
           <div className="mchat-editor-actions">
@@ -864,12 +865,12 @@ export function StaffTemplateEditorPage({ token }: Props) {
   return (
     <div className="container">
       <div className="card">
-        <Link to="/staff/templates">← Back to Templates</Link>
+        <Link to="/staff/templates">← Back to your forms</Link>
         <h2>
           {template.name} (v{template.version})
         </h2>
         <p>
-          Key: <span className="badge">{template.template_key}</span> Status: <span className="badge">{template.status}</span>
+          Form ID: <span className="badge">{template.template_key}</span> Status: <span className="badge">{formatTemplateStatus(template.status)}</span>
         </p>
 
         {error ? <div className="error">{error}</div> : null}

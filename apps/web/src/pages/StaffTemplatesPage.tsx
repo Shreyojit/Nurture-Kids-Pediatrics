@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
+import { formatAcroformReady, formatTemplateStatus } from '../lib/staffLabels';
 
 type Props = {
   token: string | null;
@@ -56,7 +57,7 @@ export function StaffTemplatesPage({ token }: Props) {
     setError('');
     if (!token) return;
     if (!templateKey.trim() || !templateName.trim() || !file) {
-      setError('Template key, name, and PDF file are required.');
+      setError('Form ID, form name, and PDF file are required.');
       return;
     }
 
@@ -113,15 +114,15 @@ export function StaffTemplatesPage({ token }: Props) {
   return (
     <div className="container">
       <div className="card">
-        <h2>Template Builder</h2>
-        <p>Upload a source PDF, define fields, generate AcroForm, and publish for patient intake.</p>
+        <h2>Form builder</h2>
+        <p>Upload a PDF, set up fields, and activate forms for families to complete.</p>
 
         {error ? <div className="error">{error}</div> : null}
 
-        <h3>Create New Template Version</h3>
+        <h3>Add a new form</h3>
         <div className="row">
           <div className="field">
-            <label>Template Key</label>
+            <label>Form ID</label>
             <input
               value={templateKey}
               onChange={(event) => setTemplateKey(event.target.value)}
@@ -129,11 +130,11 @@ export function StaffTemplatesPage({ token }: Props) {
             />
           </div>
           <div className="field">
-            <label>Template Name</label>
+            <label>Form name</label>
             <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Patient Registration" />
           </div>
           <div className="field">
-            <label>Source PDF</label>
+            <label>Upload PDF</label>
             <input
               type="file"
               accept="application/pdf"
@@ -143,21 +144,21 @@ export function StaffTemplatesPage({ token }: Props) {
         </div>
 
         <button onClick={uploadTemplate} disabled={uploading}>
-          {uploading ? 'Uploading...' : 'Upload and Open Editor'}
+          {uploading ? 'Uploading...' : 'Upload and set up fields'}
         </button>
 
-        <h3 style={{ marginTop: 24 }}>Existing Templates</h3>
-        {loading ? <p>Loading templates...</p> : null}
-        {!loading && templates.length === 0 ? <p>No templates yet.</p> : null}
+        <h3 style={{ marginTop: 24 }}>Your forms</h3>
+        {loading ? <p>Loading forms...</p> : null}
+        {!loading && templates.length === 0 ? <p>No forms yet.</p> : null}
 
         {templates.length > 0 ? (
           <table className="table">
             <thead>
               <tr>
-                <th>Template</th>
+                <th>Form name</th>
                 <th>Version</th>
                 <th>Status</th>
-                <th>AcroForm</th>
+                <th>Fields ready</th>
                 <th>Action</th>
                 <th>Delete</th>
               </tr>
@@ -171,11 +172,11 @@ export function StaffTemplatesPage({ token }: Props) {
                   </td>
                   <td>v{template.version}</td>
                   <td>
-                    <span className="badge">{template.status}</span>
+                    <span className="badge">{formatTemplateStatus(template.status)}</span>
                   </td>
-                  <td>{template.acroform_pdf_path ? 'Generated' : 'Not generated'}</td>
+                  <td>{formatAcroformReady(!!template.acroform_pdf_path)}</td>
                   <td>
-                    <Link to={`/staff/templates/${template.id}/editor`}>Open Editor</Link>
+                    <Link to={`/staff/templates/${template.id}/editor`}>Edit fields</Link>
                   </td>
                   <td>
                     <button

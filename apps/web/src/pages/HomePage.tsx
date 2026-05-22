@@ -28,8 +28,8 @@ export function HomePage() {
 
         <div className="card">
           <h3>For Admin Staff</h3>
-          <p>Manage templates, publish form versions, and review patient submissions.</p>
-          <Link to="/staff/patients">Open Admin Workspace</Link>
+          <p>Manage forms, send forms to families, and review completed intake.</p>
+          <Link to="/staff/patients">Open today's patients</Link>
         </div>
       </div>
     </div>
