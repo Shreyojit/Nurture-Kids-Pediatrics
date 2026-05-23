@@ -43,6 +43,7 @@ type PatientSearchResult = {
   child_first_name: string;
   child_last_name: string;
   child_dob: string;
+  patient_acct_no: string | null;
   account_email: string | null;
 };
 
@@ -421,7 +422,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                           onMouseLeave={(e) => (e.currentTarget.style.background = '')}
                         >
                           <div style={{ fontWeight: 600 }}>{p.child_first_name} {p.child_last_name}</div>
-                          <div style={{ fontSize: 12, color: '#666' }}>Date of birth: {p.child_dob}{p.account_email ? ` · ${p.account_email}` : ''}</div>
+                          <div style={{ fontSize: 12, color: '#666' }}>{p.patient_acct_no ? `Chart #${p.patient_acct_no}` : ''}  {p.account_email ? ` · ${p.account_email}` : ''}</div>
                         </div>
                       ))}
                     </div>
@@ -448,7 +449,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                   <div style={{ marginTop: 8, padding: '8px 12px', background: '#dbeafe', borderRadius: 6, border: '1px solid #3b82f6', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, maxWidth: 360 }}>
                     <span style={{ flex: 1 }}>
                       <strong>{selectedPatient.child_first_name} {selectedPatient.child_last_name}</strong>
-                      <span style={{ color: '#555', marginLeft: 8 }}>Date of birth: {selectedPatient.child_dob}</span>
+                      {selectedPatient.patient_acct_no && <span style={{ color: '#555', marginLeft: 8 }}>Chart #{selectedPatient.patient_acct_no}</span>}
                     </span>
                     <button
                       onClick={() => { setSelectedPatient(null); setSearchQuery(''); }}
@@ -634,7 +635,6 @@ export function StaffAssignmentsPage({ token }: Props) {
               <thead>
                 <tr>
                   <th>Patient</th>
-                  <th>Date of birth</th>
                   <th>Form</th>
                   <th>Status</th>
                   <th>Sent by</th>
@@ -646,7 +646,6 @@ export function StaffAssignmentsPage({ token }: Props) {
                 {assignments.map((a) => (
                   <tr key={a.id}>
                     <td>{a.child_first_name} {a.child_last_name}</td>
-                    <td>{a.child_dob}</td>
                     <td>{a.template_name}</td>
                     <td><span style={statusStyle(a.status)}>{formatAssignmentStatus(a.status)}</span></td>
                     <td>{a.assigned_by_email}</td>

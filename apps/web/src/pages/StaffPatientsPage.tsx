@@ -11,6 +11,15 @@ type Props = {
   token: string | null;
 };
 
+type AutoAssignSummary = {
+  patient_name: string;
+  age_group: string | null;
+  form_labels: string[];
+  assignments_created: number;
+  assignments_skipped?: number;
+  existing_patient?: boolean;
+};
+
 type BulkUploadResult = {
   inserted: number;
   skipped: number;
@@ -22,6 +31,7 @@ type BulkUploadResult = {
     child_last_name: string;
     patient_acct_no: string | null;
   }>;
+  auto_form_assignments?: AutoAssignSummary[];
 };
 
 function formatNextAppt(patient: Record<string, unknown>): string {
@@ -78,6 +88,11 @@ export function StaffPatientsPage({ token }: Props) {
         body: fd,
       });
       const noteLines = result.errors.slice(0, 8);
+      const auto = result.auto_form_assignments ?? [];
+      const autoSummary =
+        auto.length > 0
+          ? ` Auto-assigned forms for ${auto.length} well-visit patient(s) (${auto.reduce((n, a) => n + a.assignments_created, 0)} new assignment(s)).`
+          : '';
       const preview =
         result.imported_patients.length > 0
           ? ` First import: ${result.imported_patients[0].child_last_name}, ${result.imported_patients[0].child_first_name}` +
@@ -86,7 +101,7 @@ export function StaffPatientsPage({ token }: Props) {
               : '')
           : '';
       setUploadMsg(
-        `✅ Upload successful — inserted ${result.inserted}, skipped ${result.skipped}, total sheet rows ${result.total_rows}.${preview}${
+        `✅ Upload successful — inserted ${result.inserted}, skipped ${result.skipped}, total sheet rows ${result.total_rows}.${preview}${autoSummary}${
           noteLines.length ? ` Notes: ${noteLines.join('; ')}` : ''
         }`,
       );
@@ -102,8 +117,8 @@ export function StaffPatientsPage({ token }: Props) {
   return (
     <div className="container">
       <div className="card">
-        <h2>Today's Patients</h2>
-        <p>
+        <h2 className="page-title">Today&apos;s Patients</h2>
+        <p className="text-muted">
           Need to manage forms? <Link to="/staff/templates">Open form builder</Link>
         </p>
         <div className="row">
@@ -140,7 +155,6 @@ export function StaffPatientsPage({ token }: Props) {
           <thead>
             <tr>
               <th>Patient name</th>
-              <th>Date of birth</th>
               <th>Chart #</th>
               <th>Appointment</th>
               <th>Visit type</th>
@@ -155,7 +169,6 @@ export function StaffPatientsPage({ token }: Props) {
                 <td>
                   {patient.child_first_name} {patient.child_last_name}
                 </td>
-                <td>{patient.child_dob}</td>
                 <td>{patient.patient_acct_no ?? '—'}</td>
                 <td>{formatNextAppt(patient)}</td>
                 <td>{formatVisitType(patient.visit_type)}</td>

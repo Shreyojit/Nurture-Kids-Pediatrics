@@ -6,23 +6,45 @@ type Props = {
   onAuthenticated: (token: string, practiceName: string) => void;
 };
 
-export function StaffLoginPage({ onAuthenticated }: Props) {
+export function StaffRegisterPage({ onAuthenticated }: Props) {
   const navigate = useNavigate();
   const [practiceName, setPracticeName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function login(e?: React.FormEvent) {
-    e?.preventDefault();
+  async function register(e: React.FormEvent) {
+    e.preventDefault();
     setError('');
+
+    if (!practiceName.trim()) {
+      setError('Practice name is required.');
+      return;
+    }
+    if (!email.trim()) {
+      setError('Email is required.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await api<{ token: string; user: { practice_name: string } }>('/api/staff/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password, practice_name: practiceName }),
-      });
+      const result = await api<{ token: string; user: { practice_name: string } }>(
+        '/api/staff/register',
+        {
+          method: 'POST',
+          body: JSON.stringify({ practice_name: practiceName, email, password }),
+        },
+      );
       onAuthenticated(result.token, result.user.practice_name);
       navigate('/staff/patients');
     } catch (err) {
@@ -39,18 +61,18 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
           <div className="text-center" style={{ marginBottom: 20 }}>
             <div className="brand-kicker">PediForm Pro</div>
             <h1 className="patient-portal-title" style={{ marginBottom: 6 }}>
-              Admin login
+              Create admin account
             </h1>
             <p className="patient-portal-subtitle" style={{ margin: 0 }}>
-              Sign in with your practice credentials.
+              Register your practice. If it already exists, your account will be added to it.
             </p>
           </div>
 
-          <form onSubmit={login}>
+          <form onSubmit={register}>
             <div className="patient-portal-field" style={{ marginBottom: 14 }}>
-              <label htmlFor="admin-practice">Practice name</label>
+              <label htmlFor="reg-practice">Practice name</label>
               <input
-                id="admin-practice"
+                id="reg-practice"
                 value={practiceName}
                 onChange={(e) => setPracticeName(e.target.value)}
                 placeholder="e.g. Nurture Kids Pediatrics"
@@ -59,24 +81,38 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
               />
             </div>
             <div className="patient-portal-field" style={{ marginBottom: 14 }}>
-              <label htmlFor="admin-email">Email</label>
+              <label htmlFor="reg-email">Email</label>
               <input
-                id="admin-email"
+                id="reg-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@yourpractice.com"
                 autoComplete="username"
                 required
               />
             </div>
-            <div className="patient-portal-field" style={{ marginBottom: 18 }}>
-              <label htmlFor="admin-password">Password</label>
+            <div className="patient-portal-field" style={{ marginBottom: 14 }}>
+              <label htmlFor="reg-password">Password</label>
               <input
-                id="admin-password"
+                id="reg-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
+                placeholder="Min. 8 characters"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+            <div className="patient-portal-field" style={{ marginBottom: 18 }}>
+              <label htmlFor="reg-confirm">Confirm password</label>
+              <input
+                id="reg-confirm"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter password"
+                autoComplete="new-password"
                 required
               />
             </div>
@@ -84,15 +120,14 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
             {error ? <div className="patient-portal-error">{error}</div> : null}
 
             <button type="submit" className="patient-portal-submit" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
 
           <hr className="divider" />
 
-          <p className="text-muted text-center" style={{ margin: '0 0 12px' }}>
-            New practice?{' '}
-            <Link to="/staff/register">Create an account</Link>
+          <p className="text-muted text-center" style={{ margin: 0 }}>
+            Already have an account? <Link to="/staff/login">Sign in</Link>
           </p>
         </div>
       </div>

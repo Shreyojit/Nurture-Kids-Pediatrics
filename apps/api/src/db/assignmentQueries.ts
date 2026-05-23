@@ -69,6 +69,23 @@ export function listAssignmentsForPractice(practiceId: string): Array<Record<str
     .all(practiceId) as Array<Record<string, unknown>>;
 }
 
+/** True when patient already has a non-expired pending/in_progress assignment for this template. */
+export function hasActiveAssignmentForPatientTemplate(
+  patientId: string,
+  practiceId: string,
+  templateId: string,
+): boolean {
+  const row = db
+    .prepare(
+      `select id from form_assignments
+       where patient_id = ? and practice_id = ? and template_id = ?
+         and status in ('pending', 'in_progress')
+         and datetime(replace(substr(expires_at, 1, 19), 'T', ' ')) >= datetime('now')`,
+    )
+    .get(patientId, practiceId, templateId);
+  return Boolean(row);
+}
+
 export function listAssignmentsForPatient(patientId: string, practiceId: string): Array<Record<string, unknown>> {
   return db
     .prepare(

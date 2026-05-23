@@ -83,7 +83,18 @@ function getCell(raw: Record<string, unknown>, normalizedHeader: string): unknow
 export function mapVisitTypeFromText(raw: string | null | undefined): PatientVisitTypeEnum {
   const s = (raw ?? '').toLowerCase();
   if (!s.trim()) return 'new_patient';
-  if (s.includes('well')) return 'well_child';
+  if (
+    s.includes('well') ||
+    s.includes('checkup') ||
+    s.includes('check-up') ||
+    s.includes('check up') ||
+    s.includes('annual') ||
+    s.includes('preventive') ||
+    s.includes('physical exam') ||
+    s.includes('wellness')
+  ) {
+    return 'well_child';
+  }
   if (s.includes('sick')) return 'sick';
   if (s.includes('follow')) return 'follow_up';
   return 'new_patient';

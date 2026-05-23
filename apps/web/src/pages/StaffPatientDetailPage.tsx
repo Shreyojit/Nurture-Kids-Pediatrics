@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
+import { PATIENT_DOCUMENT_TYPE_OPTIONS, patientDocumentTypeLabel } from '../lib/patientDocumentTypes';
 import { formatAssignmentStatus } from '../lib/staffLabels';
 
 type Props = {
@@ -222,6 +223,13 @@ export function StaffPatientDetailPage({ token }: Props) {
   const [loadingResponsesFor, setLoadingResponsesFor] = useState('');
   const [savingResponsesFor, setSavingResponsesFor] = useState('');
 
+  // Patient files shared with family portal
+  const [documents, setDocuments] = useState<Array<{ id: string; original_filename: string; document_type: string; uploaded_at: string; uploaded_by_email: string }>>([]);
+  const [patientFile, setPatientFile] = useState<File | null>(null);
+  const [patientFileType, setPatientFileType] = useState('other');
+  const [patientFileUploading, setPatientFileUploading] = useState(false);
+  const [patientFileMsg, setPatientFileMsg] = useState('');
+
   // Form assignment state
   const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
@@ -238,6 +246,48 @@ export function StaffPatientDetailPage({ token }: Props) {
   const [portalLink, setPortalLink] = useState<{ portal_url: string; qr_code_data_url: string } | null>(null);
   const [portalLinkLoading, setPortalLinkLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [autoAssignMsg, setAutoAssignMsg] = useState('');
+
+  async function loadDocuments() {
+    if (!token || !id) return;
+    try {
+      const result = await api<{ documents: Array<{ id: string; original_filename: string; document_type: string; uploaded_at: string; uploaded_by_email: string }> }>(
+        `/api/staff/documents?patient_id=${id}`,
+        { headers: authHeader(token) },
+      );
+      setDocuments(result.documents ?? []);
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function uploadPatientFile() {
+    if (!token || !id || !patientFile) return;
+    setPatientFileUploading(true);
+    setPatientFileMsg('');
+    try {
+      const formData = new FormData();
+      formData.append('file', patientFile);
+      formData.append('document_type', patientFileType);
+      const resp = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000'}/api/staff/documents/patients/${id}/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error((err as any).error?.message ?? 'Upload failed');
+      }
+      setPatientFileMsg('File uploaded successfully. The family can view it after patient sign-in.');
+      setPatientFile(null);
+      await loadDocuments();
+    } catch (e) {
+      setPatientFileMsg((e as Error).message);
+    } finally {
+      setPatientFileUploading(false);
+    }
+  }
 
   async function loadAssignments() {
     if (!token) return;
@@ -248,6 +298,30 @@ export function StaffPatientDetailPage({ token }: Props) {
       setAssignments(result);
     } catch {
       // non-fatal
+    }
+  }
+
+  async function handleAutoAssignWellVisit() {
+    if (!token || !id) return;
+    setAutoAssigning(true);
+    setAutoAssignMsg('');
+    try {
+      const result = await api<{
+        assignments_created: number;
+        form_labels: string[];
+        age_group: string | null;
+        message: string;
+      }>(`/api/staff/assignments/patient/${id}/auto-assign`, {
+        method: 'POST',
+        headers: authHeader(token),
+        body: JSON.stringify({ expires_in_days: expiresInDays }),
+      });
+      setAutoAssignMsg(result.message);
+      await loadAssignments();
+    } catch (e) {
+      setAutoAssignMsg((e as Error).message);
+    } finally {
+      setAutoAssigning(false);
     }
   }
 
@@ -418,6 +492,7 @@ export function StaffPatientDetailPage({ token }: Props) {
     load();
     loadAssignments();
     loadTemplates();
+    loadDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, id]);
 
@@ -776,13 +851,45 @@ export function StaffPatientDetailPage({ token }: Props) {
         </div>
 
         {/* ── Form Assignment Panel ── */}
-        <div className="card" style={{ background: '#f0f7ff', marginBottom: 20, marginTop: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="card card-subtle" style={{ marginBottom: 20, marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
             <h3 style={{ margin: 0 }}>Send forms</h3>
-            <button onClick={() => { setShowAssignForm((v) => !v); setCreatedBundle(null); }}>
-              {showAssignForm ? 'Cancel' : '+ Send a form'}
-            </button>
+            <div className="toolbar">
+              <button
+                type="button"
+                className="secondary btn-inline"
+                onClick={() => void handleAutoAssignWellVisit()}
+                disabled={autoAssigning}
+              >
+                {autoAssigning ? 'Assigning…' : 'Auto-assign (well visit)'}
+              </button>
+              <button
+                type="button"
+                className="btn-inline"
+                onClick={() => {
+                  setShowAssignForm((v) => !v);
+                  setCreatedBundle(null);
+                }}
+              >
+                {showAssignForm ? 'Cancel' : '+ Send a form'}
+              </button>
+            </div>
           </div>
+          <p className="text-muted" style={{ margin: '10px 0 0', fontSize: 13 }}>
+            For well check, well visit, or annual checkup appointments, use auto-assign to send age-based forms
+            (EPDS, ASQ, M-CHAT, TB, Lead, PHQ-9, etc.) from the patient&apos;s DOB and visit type on file.
+          </p>
+          {autoAssignMsg ? (
+            <p
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                color: autoAssignMsg.toLowerCase().includes('assigned') ? '#155724' : '#555',
+              }}
+            >
+              {autoAssignMsg}
+            </p>
+          ) : null}
 
           {showAssignForm && (
             <div style={{ marginTop: 16 }}>
@@ -1053,6 +1160,88 @@ export function StaffPatientDetailPage({ token }: Props) {
             </button>
           </div>
         ))}
+
+        <h3 style={{ marginTop: 24 }}>Patient files</h3>
+        <p style={{ color: '#555', fontSize: 14 }}>
+          Send files to the patient&apos;s family portal — vaccine records, lab reports, referrals, insurance cards,
+          visit summaries, consent forms, and other PDFs or images.
+        </p>
+        <div className="card card-subtle" style={{ marginBottom: 12 }}>
+          <div className="row" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+            <div className="field" style={{ flex: '1 1 200px' }}>
+              <label>File type</label>
+              <select value={patientFileType} onChange={(e) => setPatientFileType(e.target.value)}>
+                {PATIENT_DOCUMENT_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ flex: '2 1 260px' }}>
+              <label>File (PDF, image, Word, or text)</label>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.gif,.tiff,.webp,.doc,.docx,.txt"
+                onChange={(e) => setPatientFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={uploadPatientFile}
+              disabled={patientFileUploading || !patientFile}
+              style={{ marginBottom: 4 }}
+            >
+              {patientFileUploading ? 'Uploading…' : 'Upload file'}
+            </button>
+          </div>
+          {patientFileMsg && (
+            <div
+              style={{
+                marginTop: 8,
+                color: patientFileMsg.toLowerCase().includes('success') ? '#155724' : '#721c24',
+                fontSize: 13,
+              }}
+            >
+              {patientFileMsg}
+            </div>
+          )}
+          {documents.length > 0 ? (
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>File name</th>
+                  <th>Type</th>
+                  <th>Uploaded</th>
+                  <th>Uploaded by</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>{doc.original_filename}</td>
+                    <td>{patientDocumentTypeLabel(doc.document_type)}</td>
+                    <td>{new Date(doc.uploaded_at).toLocaleString()}</td>
+                    <td>{doc.uploaded_by_email}</td>
+                    <td>
+                      <a
+                        href={`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000'}/api/staff/documents/${doc.id}/download`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 12 }}
+                      >
+                        Download
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p style={{ color: '#888', fontSize: 13, marginTop: 8 }}>No documents uploaded yet.</p>
+          )}
+        </div>
 
         <h3 style={{ marginTop: 24 }}>Submission Exports</h3>
         {submissions.length === 0 ? <p>No submissions linked.</p> : null}

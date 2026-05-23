@@ -336,7 +336,7 @@ function renderField(
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function PdfFillPage() {
-  const { slug = 'sunshine-pediatrics', sessionId = '' } = useParams();
+  const { slug = 'nurturekidspediatrics', sessionId = '' } = useParams();
   const navigate = useNavigate();
 
   const [template, setTemplate] = useState<FormTemplate | null>(null);

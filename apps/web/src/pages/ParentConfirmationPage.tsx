@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { getLocal } from '../lib/storage';
 
 export function ParentConfirmationPage() {
-  const { slug = 'sunshine-pediatrics', sessionId = '' } = useParams();
+  const { slug = 'nurturekidspediatrics', sessionId = '' } = useParams();
   const start = getLocal<Record<string, any>>(`pediform_start_${sessionId}`, {});
   const isLoggedIn = Boolean(getLocal<string | null>('pediform_parent_token', null));
 

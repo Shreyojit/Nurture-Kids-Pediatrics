@@ -6,7 +6,7 @@ import type { FormTemplate } from '../lib/types';
 import { TemplateFieldInput } from '../components/TemplateFieldInput';
 
 export function ParentFormPage() {
-  const { slug = 'sunshine-pediatrics', sessionId = '', step = '1', formId = 'patient_registration' } = useParams();
+  const { slug = 'nurturekidspediatrics', sessionId = '', step = '1', formId = 'patient_registration' } = useParams();
   const navigate = useNavigate();
   const [template, setTemplate] = useState<FormTemplate | null>(null);
   const [responses, setResponses] = useState<Record<string, unknown>>(() =>

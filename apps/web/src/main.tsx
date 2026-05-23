@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
 import { ensurePdfjsWorker } from './lib/pdfjsSetup';
 import './styles.css';
+import './styles/patientPortal.css';
 
 ensurePdfjsWorker();
 
