@@ -140,6 +140,11 @@ export function ParentLoginPage({ onPatientSession }: Props) {
           </Link>
         </div>
       </div>
+      {error ? <div className="error">{error}</div> : null}
+      <button onClick={login}>Login</button>
+      <p>
+        Need to register from intake first? <Link to="/p/nurturekidspediatrics">Start intake</Link>
+      </p>
     </div>
   );
 }

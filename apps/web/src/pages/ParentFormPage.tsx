@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { getLocal, setLocal } from '../lib/storage';
+import { getLocal, setLocal, removeLocal } from '../lib/storage';
 import type { FormTemplate } from '../lib/types';
 import { TemplateFieldInput } from '../components/TemplateFieldInput';
 
@@ -126,7 +126,18 @@ export function ParentFormPage() {
           completed: true,
         });
 
-        navigate(`/p/${slug}/session/${sessionId}/confirmation`);
+        // If patient came via portal, route to the next pending form or all-done page
+        const portalAssignments = getLocal<Array<{ session_id: string; status: string; practice_slug: string }>>('pediform_portal_assignments', []);
+        const nextForm = portalAssignments.find(
+          (a) => a.session_id !== sessionId && a.status !== 'completed',
+        );
+        if (nextForm) {
+          navigate(`/p/${nextForm.practice_slug}/session/${nextForm.session_id}/overview`);
+        } else {
+          const allDone = portalAssignments.length > 0;
+          if (allDone) removeLocal('pediform_portal_assignments');
+          navigate(`/p/${slug}/session/${sessionId}/confirmation`, { state: { allPortalFormsDone: allDone } });
+        }
       } else {
         navigate(`/p/${slug}/session/${sessionId}/form/${formId}/step/${stepIndex + 2}`);
       }

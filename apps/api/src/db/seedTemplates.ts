@@ -110,9 +110,9 @@ export function seedTemplates(): void {
 
   const staff = db
     .prepare('select id from staff_users where email = ?')
-    .get('admin@sunshineclinic.com') as { id: string } | undefined;
+    .get('admin@nurturekidspediatrics.com') as { id: string } | undefined;
   if (!staff) {
-    console.warn('[seed] template seed skipped — staff user "admin@sunshineclinic.com" not found');
+    console.warn('[seed] template seed skipped — staff user "admin@nurturekidspediatrics.com" not found');
     return;
   }
 

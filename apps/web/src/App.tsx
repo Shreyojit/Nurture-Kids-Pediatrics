@@ -31,11 +31,6 @@ const isPatientOnly = APP_MODE === 'patient';
 // Default practice slug for the patient portal landing
 const DEFAULT_SLUG = 'nurturekidspediatrics';
 
-/** Patient home URL → sign-in (name + DOB). */
-function RedirectToPatientSignIn() {
-  return <Navigate to="/parent/login" replace />;
-}
-
 export function App() {
   const [patientSession, setPatientSession] = useState<PatientSession | null>(() => getPatientSession());
   const [staffToken, setStaffToken] = useState<string | null>(() => getLocal('pediform_staff_token', null));

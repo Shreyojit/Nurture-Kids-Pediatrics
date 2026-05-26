@@ -11,7 +11,11 @@ type Practice = {
   settings: Record<string, unknown>;
 };
 
-export function ParentStartPage() {
+type Props = {
+  parentToken?: string | null;
+};
+
+export function ParentStartPage({ parentToken }: Props) {
   const { slug = 'nurturekidspediatrics' } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
