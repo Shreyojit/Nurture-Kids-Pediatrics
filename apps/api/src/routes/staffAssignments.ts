@@ -14,7 +14,8 @@ import {
 } from '../db/assignmentQueries.js';
 import { createBundleWithAssignments } from '../db/bundleQueries.js';
 import { ensurePatientPortalToken } from '../db/portalQueries.js';
-import { findPracticeById } from '../db/queries.js';
+import { findPracticeById, getLatestAppointmentVisitTypeRaw } from '../db/queries.js';
+import { autoAssignForWellVisit } from '../lib/autoFormAssignment.js';
 import { db, nowIso } from '../db/database.js';
 
 function practiceSlug(practiceId: string): string {
@@ -147,6 +148,54 @@ staffAssignmentsRouter.get('/patient/:patientId', (req, res) => {
   const auth = req.user as { practiceId: string };
   const assignments = listAssignmentsForPatient(req.params.patientId, auth.practiceId);
   ok(res, assignments);
+});
+
+const autoAssignSchema = z.object({
+  expires_in_days: z.number().int().min(1).max(90).optional(),
+});
+
+/** Age-based auto-assignment for well / preventive visits (DOB + visit type). */
+staffAssignmentsRouter.post('/patient/:patientId/auto-assign', (req, res) => {
+  const auth = req.user as { id: string; practiceId: string };
+  const parsed = autoAssignSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    fail(res, 'VALIDATION_ERROR', 'Invalid payload', 422, parsed.error.flatten());
+    return;
+  }
+
+  const patient = db
+    .prepare('select id, child_dob, visit_type from patients where id = ? and practice_id = ?')
+    .get(req.params.patientId, auth.practiceId) as
+    | { id: string; child_dob: string; visit_type: string }
+    | undefined;
+
+  if (!patient) {
+    fail(res, 'NOT_FOUND', 'Patient not found', 404);
+    return;
+  }
+
+  const apptVisit = getLatestAppointmentVisitTypeRaw(patient.id);
+  const visitType = apptVisit ?? patient.visit_type;
+
+  const result = autoAssignForWellVisit({
+    practiceId: auth.practiceId,
+    patientId: patient.id,
+    childDob: patient.child_dob,
+    visitType,
+    assignedBy: auth.id,
+    expiresInDays: parsed.data.expires_in_days,
+  });
+
+  ok(res, {
+    ...result,
+    visit_type_used: visitType,
+    message:
+      result.assignments_created > 0
+        ? `Assigned ${result.assignments_created} form(s) for age group ${result.age_group ?? 'n/a'}.`
+        : result.form_labels.length === 0
+          ? 'No forms mapped for this age group, or visit type is not a well/preventive visit.'
+          : 'No new assignments created (may already be assigned).',
+  });
 });
 
 staffAssignmentsRouter.get('/:id/link', async (req, res) => {

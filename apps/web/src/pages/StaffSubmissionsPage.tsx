@@ -60,8 +60,7 @@ export function StaffSubmissionsPage({ token }: Props) {
         name.includes(q) ||
         (s.template_name ?? '').toLowerCase().includes(q) ||
         s.confirmation_code.toLowerCase().includes(q) ||
-        s.status.toLowerCase().includes(q) ||
-        (s.child_dob ?? '').includes(q)
+        s.status.toLowerCase().includes(q)
       );
     });
   }, [submissions, search, statusFilter]);
@@ -181,7 +180,6 @@ export function StaffSubmissionsPage({ token }: Props) {
             <tr>
               <th>Patient</th>
               <th>Form</th>
-              <th>Date of birth</th>
               <th>Status</th>
               <th>Reference #</th>
               <th>Completed on</th>
@@ -196,7 +194,6 @@ export function StaffSubmissionsPage({ token }: Props) {
                 <tr key={s.id}>
                   <td>{childName || <em style={{ color: '#9ca3af' }}>Unknown</em>}</td>
                   <td>{s.template_name ?? <em style={{ color: '#9ca3af' }}>—</em>}</td>
-                  <td>{s.child_dob ?? '—'}</td>
                   <td>
                     <span style={{
                       background: s.status === 'completed' ? '#d1fae5' : s.status === 'exported' ? '#dbeafe' : '#fef3c7',

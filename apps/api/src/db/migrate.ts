@@ -356,6 +356,7 @@ export function runMigrations(): void {
   ensurePatientPortalToken();
   fixAsq30RadioGroups();
   renameSunshinePractice();
+  ensurePatientDocumentsTable();
 }
 
 function renameSunshinePractice(): void {
@@ -694,4 +695,24 @@ function fixAsq30RadioGroups(): void {
       console.log(`[migrate] fixAsq30RadioGroups: corrected ${updated} radio field group assignments`);
     }
   })();
+}
+
+function ensurePatientDocumentsTable(): void {
+  db.exec(`
+    create table if not exists patient_documents (
+      id text primary key,
+      practice_id text not null,
+      patient_id text not null,
+      document_type text not null default 'vaccine_record',
+      original_filename text not null,
+      stored_path text not null,
+      uploaded_by text not null,
+      uploaded_at text not null,
+      foreign key(practice_id) references practices(id),
+      foreign key(patient_id) references patients(id),
+      foreign key(uploaded_by) references staff_users(id)
+    );
+    create index if not exists idx_patient_documents_patient on patient_documents(patient_id);
+    create index if not exists idx_patient_documents_practice on patient_documents(practice_id);
+  `);
 }

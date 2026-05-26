@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { comparePassword, signToken } from '../lib/auth.js';
+import { comparePassword, hashPassword, signToken } from '../lib/auth.js';
 import { fail, ok } from '../lib/response.js';
 import { buildPatientRegistrationFileName, generateSubmissionPdf } from '../lib/pdfGenerator.js';
 import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
@@ -24,6 +24,9 @@ import {
   replaceChildTable,
   updatePatientCore,
   upsertOneToOne,
+  findPracticeByName,
+  createPractice,
+  createStaffUser,
 } from '../db/queries.js';
 import { parseJson } from '../db/database.js';
 import { resolveDataPath } from '../config.js';
@@ -142,6 +145,7 @@ function getStaffScopedSubmissionOrFail(
 const staffLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  practice_name: z.string().min(1),
 });
 
 staffRouter.post('/login', (req, res) => {
@@ -151,17 +155,29 @@ staffRouter.post('/login', (req, res) => {
     return;
   }
 
+  // Validate practice name first
+  const practice = findPracticeByName(parsed.data.practice_name);
+  if (!practice) {
+    fail(res, 'INVALID_CREDENTIALS', 'Practice not found', 401);
+    return;
+  }
+
   const user = getStaffByEmail(parsed.data.email.toLowerCase());
-  if (!user || !user.is_active || !comparePassword(parsed.data.password, user.password_hash)) {
+  if (!user || !user.is_active || !comparePassword(parsed.data.password, user.password_hash as string)) {
     fail(res, 'INVALID_CREDENTIALS', 'Invalid credentials', 401);
     return;
   }
 
+  if (user.practice_id !== practice.id) {
+    fail(res, 'INVALID_CREDENTIALS', 'This account is not registered for that practice', 401);
+    return;
+  }
+
   const token = signToken({
-    id: user.id,
-    role: user.role,
-    practiceId: user.practice_id,
-    email: user.email,
+    id: user.id as string,
+    role: user.role as 'staff' | 'admin',
+    practiceId: user.practice_id as string,
+    email: user.email as string,
   });
 
   ok(res, {
@@ -171,6 +187,61 @@ staffRouter.post('/login', (req, res) => {
       email: user.email,
       role: user.role,
       practice_id: user.practice_id,
+      practice_name: practice.name,
+    },
+  });
+});
+
+const staffRegisterSchema = z.object({
+  practice_name: z.string().min(2, 'Practice name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+staffRouter.post('/register', (req, res) => {
+  const parsed = staffRegisterSchema.safeParse(req.body);
+  if (!parsed.success) {
+    fail(res, 'VALIDATION_ERROR', 'Invalid registration payload', 422, parsed.error.flatten());
+    return;
+  }
+
+  const { practice_name, email, password } = parsed.data;
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const existingUser = getStaffByEmail(normalizedEmail);
+  if (existingUser) {
+    fail(res, 'EMAIL_TAKEN', 'An account with this email already exists', 409);
+    return;
+  }
+
+  let practice = findPracticeByName(practice_name);
+  if (!practice) {
+    practice = createPractice(practice_name);
+  }
+
+  const passwordHash = hashPassword(password);
+  const newUser = createStaffUser({
+    email: normalizedEmail,
+    passwordHash,
+    practiceId: practice.id as string,
+    role: 'admin',
+  });
+
+  const token = signToken({
+    id: newUser.id,
+    role: 'admin',
+    practiceId: newUser.practiceId,
+    email: newUser.email,
+  });
+
+  ok(res, {
+    token,
+    user: {
+      id: newUser.id,
+      email: newUser.email,
+      role: 'admin',
+      practice_id: practice.id,
+      practice_name: practice.name,
     },
   });
 });
@@ -194,17 +265,18 @@ staffRouter.post(
       next();
     });
   },
-  (req, res) => {
+  async (req, res) => {
     if (!req.file?.buffer) {
       fail(res, 'VALIDATION_ERROR', 'Excel file field "file" is required', 422);
       return;
     }
     const parsed = parsePatientExcelBuffer(req.file.buffer);
-    const result = bulkImportPatientsFromExcelRows(
+    const result = await bulkImportPatientsFromExcelRows(
       req.user!.practiceId,
       parsed.rows,
       parsed.total_rows,
       parsed.errors,
+      req.user!.id,
     );
     ok(res, result);
   },

@@ -101,10 +101,12 @@ export function PatientPortalPage() {
   const [cachedIdentity, setCachedIdentity] = useState<{
     firstName: string;
     lastName: string;
+    dob: string;
   } | null>(null);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [dob, setDob] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verifyError, setVerifyError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -133,9 +135,9 @@ export function PatientPortalPage() {
     try {
       const result = await api<VerifyResult>(`/api/portal/${token}/verify`, {
         method: 'POST',
-        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+        body: JSON.stringify({ first_name: firstName, last_name: lastName, dob }),
       });
-      setCachedIdentity({ firstName, lastName });
+      setCachedIdentity({ firstName, lastName, dob });
       setVerified(result);
     } catch (e: unknown) {
       setVerifyError((e as Error).message);
@@ -153,6 +155,7 @@ export function PatientPortalPage() {
         body: JSON.stringify({
           first_name: cachedIdentity.firstName,
           last_name: cachedIdentity.lastName,
+          dob: cachedIdentity.dob,
         }),
       });
       setVerified(result);
@@ -334,7 +337,7 @@ export function PatientPortalPage() {
 
         <h1 className="patient-portal-title">Confirm your identity</h1>
         <p className="patient-portal-subtitle">
-          Enter your child&apos;s name to access the forms. This keeps your information secure.
+          Enter your child&apos;s name and date of birth to access the forms. This keeps your information secure.
         </p>
 
         <form onSubmit={handleVerify}>
@@ -362,12 +365,22 @@ export function PatientPortalPage() {
                 autoComplete="family-name"
               />
             </div>
+            <div className="patient-portal-field" style={{ marginBottom: 18 }}>
+              <label htmlFor="portal-dob">Date of birth</label>
+              <input
+                id="portal-dob"
+                type="date"
+                value={dob}
+                onChange={(e) => setDob(e.target.value)}
+                required
+              />
+            </div>
           </div>
 
           {verifyError ? (
             <div className="patient-portal-error">
               {verifyError.includes('does not match')
-                ? 'The name you entered does not match our records. Please try again.'
+                ? 'The name or date of birth does not match our records. Please try again.'
                 : verifyError}
             </div>
           ) : null}

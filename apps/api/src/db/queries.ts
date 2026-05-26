@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PatientExcelImportRow } from '../lib/patientExcelImport.js';
+import { autoAssignForWellVisit } from '../lib/autoFormAssignment.js';
 import { db, nowIso, parseJson, stringifyJson } from './database.js';
 
 export type SubmissionRow = {
@@ -499,6 +500,20 @@ export function linkPatientAccount(input: { submissionId: string; accountId: str
   );
 }
 
+/** Latest imported appointment visit type text for a patient (Excel schedule). */
+export function getLatestAppointmentVisitTypeRaw(patientId: string): string | null {
+  const row = db
+    .prepare(
+      `select visit_type_raw from appointments
+       where patient_id = ?
+       order by created_at desc, id desc
+       limit 1`,
+    )
+    .get(patientId) as { visit_type_raw: string | null } | undefined;
+  const raw = row?.visit_type_raw;
+  return raw && String(raw).trim() ? String(raw).trim() : null;
+}
+
 export function listPatients(practiceId: string, search?: string): Array<Record<string, unknown>> {
   const q = `%${search ?? ''}%`;
   return db
@@ -529,6 +544,33 @@ export function listPatients(practiceId: string, search?: string): Array<Record<
     .all(practiceId, q, q, q) as Array<Record<string, unknown>>;
 }
 
+export type AutoAssignSummary = {
+  patient_name: string;
+  age_group: string | null;
+  form_labels: string[];
+  assignments_created: number;
+  assignments_skipped?: number;
+  existing_patient?: boolean;
+};
+
+function recordAutoAssignSummary(
+  summaries: AutoAssignSummary[],
+  patientName: string,
+  result: ReturnType<typeof autoAssignForWellVisit>,
+  existingPatient: boolean,
+): void {
+  const visitHadRules = result.form_labels.length > 0 || result.assignments_created > 0;
+  if (!visitHadRules && !result.age_group) return;
+  summaries.push({
+    patient_name: patientName,
+    age_group: result.age_group,
+    form_labels: result.form_labels,
+    assignments_created: result.assignments_created,
+    assignments_skipped: result.assignments_skipped,
+    existing_patient: existingPatient,
+  });
+}
+
 export type BulkPatientImportResult = {
   inserted: number;
   skipped: number;
@@ -540,20 +582,24 @@ export type BulkPatientImportResult = {
     child_last_name: string;
     patient_acct_no: string | null;
   }>;
+  auto_form_assignments: AutoAssignSummary[];
 };
 
 /**
  * Insert parsed Excel rows; skips duplicates (same practice + acct no, or name + DOB),
  * duplicate keys within the same upload batch, and unique constraint violations.
+ * If assignedByStaffId is provided, runs auto-form-assignment for well-visit rows.
  */
-export function bulkImportPatientsFromExcelRows(
+export async function bulkImportPatientsFromExcelRows(
   practiceId: string,
   parsedRows: PatientExcelImportRow[],
   total_rows: number,
   parseErrors: string[],
-): BulkPatientImportResult {
+  assignedByStaffId?: string,
+): Promise<BulkPatientImportResult> {
   const errors = [...parseErrors];
   const imported_patients: BulkPatientImportResult['imported_patients'] = [];
+  const auto_form_assignments: AutoAssignSummary[] = [];
   let inserted = 0;
   let skipped = 0;
 
@@ -599,6 +645,44 @@ export function bulkImportPatientsFromExcelRows(
     ) values (?, ?, 1, ?, null, null, null, ?, ?, ?)`,
   );
 
+  function insertAppointmentForImportRow(
+    patientId: string,
+    row: PatientExcelImportRow,
+    now: string,
+  ): string | null {
+    const hasApptData = Boolean(
+      row.nextAppointmentDate ||
+        row.nextAppointmentTime ||
+        row.appointmentVisitType ||
+        row.appointmentVisitReason ||
+        row.appointmentProviderName ||
+        row.appointmentFacilityName,
+    );
+    if (!hasApptData) return null;
+    const apptKey = `excel:${practiceId}:${row.externalPatientKey}:r${row.sheetRow}`;
+    try {
+      insertAppointment.run(
+        randomUUID(),
+        practiceId,
+        patientId,
+        apptKey,
+        row.nextAppointmentDate,
+        row.nextAppointmentTime,
+        row.appointmentVisitType,
+        row.appointmentVisitReason,
+        row.appointmentProviderName,
+        row.appointmentFacilityName,
+        'excel_bulk',
+        now,
+        now,
+        now,
+      );
+      return null;
+    } catch (apptErr) {
+      return (apptErr as Error).message ?? String(apptErr);
+    }
+  }
+
   const seenInFile = new Set<string>();
 
   for (const row of parsedRows) {
@@ -626,6 +710,27 @@ export function bulkImportPatientsFromExcelRows(
 
     if (existing) {
       skipped += 1;
+      const now = nowIso();
+      const apptErr = insertAppointmentForImportRow(existing.id, row, now);
+      if (apptErr) {
+        errors.push(`Row ${row.sheetRow}: existing patient — appointment not saved (${apptErr})`);
+      }
+      if (assignedByStaffId) {
+        const visitType = row.appointmentVisitType ?? row.rawVisitType ?? row.visitType;
+        const result = autoAssignForWellVisit({
+          practiceId,
+          patientId: existing.id,
+          childDob: row.childDob,
+          visitType,
+          assignedBy: assignedByStaffId,
+        });
+        recordAutoAssignSummary(
+          auto_form_assignments,
+          `${row.childFirstName} ${row.childLastName}`,
+          result,
+          true,
+        );
+      }
       errors.push(`Row ${row.sheetRow}: skipped (patient already exists)`);
       continue;
     }
@@ -663,37 +768,9 @@ export function bulkImportPatientsFromExcelRows(
       continue;
     }
 
-    const apptKey = `excel:${practiceId}:${row.externalPatientKey}:r${row.sheetRow}`;
-    const hasApptData = Boolean(
-      row.nextAppointmentDate ||
-        row.nextAppointmentTime ||
-        row.appointmentVisitType ||
-        row.appointmentVisitReason ||
-        row.appointmentProviderName ||
-        row.appointmentFacilityName,
-    );
-    if (hasApptData) {
-      try {
-        insertAppointment.run(
-          randomUUID(),
-          practiceId,
-          id,
-          apptKey,
-          row.nextAppointmentDate,
-          row.nextAppointmentTime,
-          row.appointmentVisitType,
-          row.appointmentVisitReason,
-          row.appointmentProviderName,
-          row.appointmentFacilityName,
-          'excel_bulk',
-          now,
-          now,
-          now,
-        );
-      } catch (apptErr) {
-        const apMsg = (apptErr as Error).message ?? String(apptErr);
-        errors.push(`Row ${row.sheetRow}: patient saved but appointment not saved (${apMsg})`);
-      }
+    const apptErr = insertAppointmentForImportRow(id, row, now);
+    if (apptErr) {
+      errors.push(`Row ${row.sheetRow}: patient saved but appointment not saved (${apptErr})`);
     }
 
     if (row.guardianPhones || row.guardianEmail || row.guardianAddress) {
@@ -726,15 +803,27 @@ export function bulkImportPatientsFromExcelRows(
     }
 
     inserted += 1;
-    imported_patients.push({
-      id,
-      child_first_name: row.childFirstName,
-      child_last_name: row.childLastName,
-      patient_acct_no: acct,
-    });
+    imported_patients.push({ id, child_first_name: row.childFirstName, child_last_name: row.childLastName, patient_acct_no: acct });
+
+    if (assignedByStaffId) {
+      const visitType = row.appointmentVisitType ?? row.rawVisitType ?? row.visitType;
+      const result = autoAssignForWellVisit({
+        practiceId,
+        patientId: id,
+        childDob: row.childDob,
+        visitType,
+        assignedBy: assignedByStaffId,
+      });
+      recordAutoAssignSummary(
+        auto_form_assignments,
+        `${row.childFirstName} ${row.childLastName}`,
+        result,
+        false,
+      );
+    }
   }
 
-  return { inserted, skipped, total_rows, errors, imported_patients };
+  return { inserted, skipped, total_rows, errors, imported_patients, auto_form_assignments };
 }
 
 function getRows(table: string, patientId: string): Array<Record<string, unknown>> {
@@ -900,12 +989,85 @@ export function exportSubmissionJson(submissionId: string, staffUserId: string):
   };
 }
 
+/** Legacy URL slugs still used in bookmarks/links → current practice slug in DB. */
+const PRACTICE_SLUG_ALIASES: Record<string, string> = {
+  'sunshine-pediatrics': 'nurturekidspediatrics',
+};
+
 export function findPracticeBySlug(slug: string): Record<string, unknown> | undefined {
-  return db.prepare('select * from practices where slug = ?').get(slug) as Record<string, unknown> | undefined;
+  const raw = String(slug ?? '').trim();
+  if (!raw) return undefined;
+  const canonical = PRACTICE_SLUG_ALIASES[raw.toLowerCase()] ?? raw;
+  return db
+    .prepare('select * from practices where lower(trim(slug)) = lower(trim(?))')
+    .get(canonical) as Record<string, unknown> | undefined;
 }
 
 export function findPracticeById(id: string): Record<string, unknown> | undefined {
   return db.prepare('select * from practices where id = ?').get(id) as Record<string, unknown> | undefined;
+}
+
+export function findPracticeByName(name: string): Record<string, unknown> | undefined {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) return undefined;
+  return db
+    .prepare('select * from practices where lower(trim(name)) = lower(trim(?))')
+    .get(trimmed) as Record<string, unknown> | undefined;
+}
+
+/** All patient records matching child name + DOB (may span multiple practices). */
+export function findPatientsByIdentity(input: {
+  firstName: string;
+  lastName: string;
+  dob: string;
+}): Array<Record<string, unknown> & { practice_slug: string; practice_name: string }> {
+  const dobNorm = String(input.dob).trim().slice(0, 10);
+  return db
+    .prepare(
+      `select p.*, pr.slug as practice_slug, pr.name as practice_name
+       from patients p
+       join practices pr on pr.id = p.practice_id
+       where lower(trim(p.child_first_name)) = lower(trim(?))
+         and lower(trim(p.child_last_name)) = lower(trim(?))
+         and p.child_dob = ?
+       order by pr.name asc`,
+    )
+    .all(input.firstName.trim(), input.lastName.trim(), dobNorm) as Array<
+    Record<string, unknown> & { practice_slug: string; practice_name: string }
+  >;
+}
+
+export function createPractice(name: string): { id: string; name: string; slug: string } {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 60);
+  const id = randomUUID();
+  db.prepare(
+    `insert into practices (id, name, slug, logo_url, settings_json, created_at)
+     values (?, ?, ?, null, ?, ?)`,
+  ).run(
+    id,
+    name.trim(),
+    slug,
+    JSON.stringify({ enabled_visit_types: ['new_patient', 'well_child', 'sick', 'follow_up'] }),
+    nowIso(),
+  );
+  return { id, name: name.trim(), slug };
+}
+
+export function createStaffUser(input: {
+  email: string;
+  passwordHash: string;
+  practiceId: string;
+  role: 'admin' | 'staff';
+}): { id: string; email: string; practiceId: string; role: string } {
+  const id = randomUUID();
+  db.prepare(
+    `insert into staff_users (id, email, password_hash, practice_id, role, is_active, created_at)
+     values (?, ?, ?, ?, ?, 1, ?)`,
+  ).run(id, input.email.toLowerCase().trim(), input.passwordHash, input.practiceId, input.role, nowIso());
+  return { id, email: input.email.toLowerCase().trim(), practiceId: input.practiceId, role: input.role };
 }
 
 export function createPatientAccount(input: {
