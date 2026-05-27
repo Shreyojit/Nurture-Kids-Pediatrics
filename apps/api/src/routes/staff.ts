@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import QRCode from 'qrcode';
 import { z } from 'zod';
 import { comparePassword, hashPassword, signToken } from '../lib/auth.js';
 import { fail, ok } from '../lib/response.js';
@@ -25,11 +26,13 @@ import {
   updatePatientCore,
   upsertOneToOne,
   findPracticeByName,
+  findPracticeById,
   createPractice,
   createStaffUser,
 } from '../db/queries.js';
 import { parseJson } from '../db/database.js';
-import { resolveDataPath } from '../config.js';
+import { config, resolveDataPath } from '../config.js';
+import { ensurePatientPortalToken, regeneratePatientPortalToken } from '../db/portalQueries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { parsePatientExcelBuffer } from '../lib/patientExcelImport.js';
 
@@ -289,6 +292,37 @@ staffRouter.get('/patients/:id', (req, res) => {
     return;
   }
   ok(res, detail);
+});
+
+function practiceSlug(practiceId: string): string {
+  const practice = findPracticeById(practiceId) as { slug?: string } | undefined;
+  return practice?.slug ?? 'unknown';
+}
+
+staffRouter.get('/patients/:id/portal-link', async (req, res) => {
+  const auth = req.user as { id: string; practiceId: string };
+  const patient = getPatientDetail(req.params.id, auth.practiceId);
+  if (!patient) {
+    fail(res, 'NOT_FOUND', 'Patient not found', 404);
+    return;
+  }
+  const portalToken = ensurePatientPortalToken(req.params.id);
+  const portalUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/portal/${portalToken}`;
+  const qr_code_data_url = await QRCode.toDataURL(portalUrl, { width: 300, margin: 2 });
+  ok(res, { portal_url: portalUrl, qr_code_data_url });
+});
+
+staffRouter.post('/patients/:id/regenerate-portal-token', async (req, res) => {
+  const auth = req.user as { id: string; practiceId: string };
+  const patient = getPatientDetail(req.params.id, auth.practiceId);
+  if (!patient) {
+    fail(res, 'NOT_FOUND', 'Patient not found', 404);
+    return;
+  }
+  const portalToken = regeneratePatientPortalToken(req.params.id, auth.practiceId);
+  const portalUrl = `${config.frontendUrl}/${practiceSlug(auth.practiceId)}/fill/portal/${portalToken}`;
+  const qr_code_data_url = await QRCode.toDataURL(portalUrl, { width: 300, margin: 2 });
+  ok(res, { portal_url: portalUrl, qr_code_data_url });
 });
 
 const coreUpdateSchema = z.object({
