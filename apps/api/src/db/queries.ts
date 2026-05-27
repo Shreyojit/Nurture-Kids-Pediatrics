@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { PatientExcelImportRow } from '../lib/patientExcelImport.js';
 import { autoAssignForWellVisit } from '../lib/autoFormAssignment.js';
 import { db, nowIso, parseJson, stringifyJson } from './database.js';
@@ -522,7 +522,12 @@ export function listPatients(practiceId: string, search?: string): Array<Record<
               p.patient_acct_no,
               na.next_appointment_date, na.next_appointment_time,
               s.status as latest_submission_status,
-              pa.email as account_email
+              pa.email as account_email,
+              loc.location_name        as location_name,
+              loc.facility_group_name  as facility_group_name,
+              loc.state                as location_state,
+              loc.city                 as location_city,
+              loc.id                   as location_id
        from patients p
        left join (
          select patient_id, appointment_date as next_appointment_date, appointment_time as next_appointment_time
@@ -534,14 +539,18 @@ export function listPatients(practiceId: string, search?: string): Array<Record<
        ) na on na.patient_id = p.id
        left join submissions s on s.patient_id = p.id
        left join patient_accounts pa on pa.id = p.account_id
+       left join practices loc on loc.id = p.location_id
        where p.practice_id = ? and (
          p.child_first_name like ? or p.child_last_name like ?
          or coalesce(p.patient_acct_no, '') like ?
+         or coalesce(loc.location_name, '') like ?
+         or coalesce(loc.facility_group_name, '') like ?
+         or coalesce(loc.state, '') like ?
        )
        group by p.id
        order by p.updated_at desc`,
     )
-    .all(practiceId, q, q, q) as Array<Record<string, unknown>>;
+    .all(practiceId, q, q, q, q, q, q) as Array<Record<string, unknown>>;
 }
 
 export type AutoAssignSummary = {
@@ -626,9 +635,9 @@ export async function bulkImportPatientsFromExcelRows(
     `insert into appointments (
       id, practice_id, patient_id, external_appointment_key,
       appointment_date, appointment_time, visit_type_raw, visit_reason,
-      provider_name, facility_name, import_source, imported_at,
-      created_at, updated_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      provider_name, facility_group_name, facility_name,
+      import_source, imported_at, created_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const insertGuardian = db.prepare(
@@ -671,6 +680,7 @@ export async function bulkImportPatientsFromExcelRows(
         row.appointmentVisitType,
         row.appointmentVisitReason,
         row.appointmentProviderName,
+        row.appointmentFacilityGroupName,
         row.appointmentFacilityName,
         'excel_bulk',
         now,
@@ -680,6 +690,27 @@ export async function bulkImportPatientsFromExcelRows(
       return null;
     } catch (apptErr) {
       return (apptErr as Error).message ?? String(apptErr);
+    }
+  }
+
+  /**
+   * Resolve (or create) a clinic location from the import row's facility fields,
+   * and stamp location_id on the patient record.
+   */
+  function stampPatientLocation(patientId: string, row: PatientExcelImportRow): void {
+    try {
+      const locationId = findOrCreateClinicLocation(
+        practiceId,
+        row.appointmentFacilityName,
+        row.appointmentFacilityGroupName,
+      );
+      if (locationId) {
+        db.prepare(`update patients set location_id = ? where id = ?`).run(locationId, patientId);
+      }
+    } catch (err) {
+      errors.push(
+        `Row ${row.sheetRow}: could not link clinic/region (${(err as Error).message ?? String(err)})`,
+      );
     }
   }
 
@@ -711,6 +742,8 @@ export async function bulkImportPatientsFromExcelRows(
     if (existing) {
       skipped += 1;
       const now = nowIso();
+      // Always update location even for existing patients (facility may have changed)
+      stampPatientLocation(existing.id, row);
       const apptErr = insertAppointmentForImportRow(existing.id, row, now);
       if (apptErr) {
         errors.push(`Row ${row.sheetRow}: existing patient — appointment not saved (${apptErr})`);
@@ -767,6 +800,9 @@ export async function bulkImportPatientsFromExcelRows(
       errors.push(`Row ${row.sheetRow}: ${msg}`);
       continue;
     }
+
+    // Link to clinic location derived from facility columns
+    stampPatientLocation(id, row);
 
     const apptErr = insertAppointmentForImportRow(id, row, now);
     if (apptErr) {
@@ -1007,11 +1043,16 @@ export function findPracticeById(id: string): Record<string, unknown> | undefine
   return db.prepare('select * from practices where id = ?').get(id) as Record<string, unknown> | undefined;
 }
 
+/** Find a root organization by name (organization_id IS NULL = root org). */
 export function findPracticeByName(name: string): Record<string, unknown> | undefined {
   const trimmed = String(name ?? '').trim();
   if (!trimmed) return undefined;
   return db
-    .prepare('select * from practices where lower(trim(name)) = lower(trim(?))')
+    .prepare(
+      `select * from practices
+       where lower(trim(name)) = lower(trim(?))
+         and organization_id is null`,
+    )
     .get(trimmed) as Record<string, unknown> | undefined;
 }
 
@@ -1037,7 +1078,8 @@ export function findPatientsByIdentity(input: {
   >;
 }
 
-export function createPractice(name: string): { id: string; name: string; slug: string } {
+/** Create a root organization (organization_id = NULL). */
+export function createOrganization(name: string): { id: string; name: string; slug: string } {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
@@ -1056,18 +1098,219 @@ export function createPractice(name: string): { id: string; name: string; slug: 
   return { id, name: name.trim(), slug };
 }
 
+/** Backward-compat alias — treats every call as creating a root org. */
+export function createPractice(name: string): { id: string; name: string; slug: string } {
+  return createOrganization(name);
+}
+
+/** Slugify for clinic/location rows (legacy — used for lookup of existing rows). */
+function buildClinicSlugLegacy(organizationId: string, locationName: string): string {
+  return (organizationId + '-' + locationName)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 80);
+}
+
+/** Guaranteed-unique slug when legacy form would collide (different labels, same slug). */
+function buildClinicSlugUnique(organizationId: string, locationName: string): string {
+  const hash = createHash('sha256')
+    .update(`${organizationId}\0${locationName.trim()}`)
+    .digest('hex')
+    .slice(0, 10);
+  const base = buildClinicSlugLegacy(organizationId, locationName).slice(0, 68);
+  return `${base}-${hash}`.slice(0, 80);
+}
+
+function isSqliteUniqueError(err: unknown): boolean {
+  return (
+    err != null &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+  );
+}
+
+function backfillClinicGroupIfNeeded(
+  clinicId: string,
+  group: string | null,
+  existingGroup: string | null | undefined,
+): void {
+  if (group && !existingGroup) {
+    db.prepare(`update practices set facility_group_name = ? where id = ?`).run(group, clinicId);
+  }
+}
+
+/**
+ * Create a location/branch under an existing organization.
+ * Returns the new location row (reuses existing clinic row when name/slug already exists).
+ */
+export function createLocation(input: {
+  organizationId: string;
+  locationName: string;
+  state?: string | null;
+  city?: string | null;
+  facilityGroupName?: string | null;
+}): { id: string; name: string; slug: string; organizationId: string } {
+  const trimmed = input.locationName.trim();
+  const clinicId = findOrCreateClinicLocation(
+    input.organizationId,
+    trimmed,
+    input.facilityGroupName ?? null,
+  );
+  if (!clinicId) {
+    throw new Error('LOCATION_NAME_REQUIRED');
+  }
+  if (input.state?.trim() || input.city?.trim()) {
+    db.prepare(
+      `update practices set state = coalesce(?, state), city = coalesce(?, city) where id = ?`,
+    ).run(input.state?.trim() ?? null, input.city?.trim() ?? null, clinicId);
+  }
+  const row = db.prepare('select id, name, slug from practices where id = ?').get(clinicId) as {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  return { id: row.id, name: row.name, slug: row.slug, organizationId: input.organizationId };
+}
+
+/**
+ * Find a location by name + parent org id.
+ * Case-insensitive match on location_name.
+ */
+export function findLocationByName(
+  organizationId: string,
+  locationName: string,
+): Record<string, unknown> | undefined {
+  return db
+    .prepare(
+      `select * from practices
+       where organization_id = ?
+         and lower(trim(location_name)) = lower(trim(?))`,
+    )
+    .get(organizationId, locationName.trim()) as Record<string, unknown> | undefined;
+}
+
+/** List all locations/branches under an org. */
+export function listLocationsForOrg(organizationId: string): Array<Record<string, unknown>> {
+  return db
+    .prepare(`select * from practices where organization_id = ? order by facility_group_name asc, location_name asc`)
+    .all(organizationId) as Array<Record<string, unknown>>;
+}
+
+/**
+ * Resolve or create a clinic location from EMR data.
+ *
+ * The 3-level hierarchy:
+ *   organizationId (root practice) → facilityGroupName (region) → facilityName (clinic)
+ *
+ * Matching is case-insensitive on location_name (= facility name).
+ * If an existing row already has the same name but no group yet, the group is back-filled.
+ * Returns the clinic's practice row id, or null if facilityName is empty.
+ */
+export function findOrCreateClinicLocation(
+  organizationId: string,
+  facilityName: string | null | undefined,
+  facilityGroupName: string | null | undefined,
+): string | null {
+  const name = facilityName?.trim();
+  if (!name) return null;
+
+  const group = facilityGroupName?.trim() || null;
+
+  const findByName = db.prepare(
+    `select id, facility_group_name from practices
+     where organization_id = ?
+       and lower(trim(location_name)) = lower(trim(?))
+     limit 1`,
+  );
+  const findBySlug = db.prepare(
+    `select id, facility_group_name from practices where slug = ? limit 1`,
+  );
+
+  const existingByName = findByName.get(organizationId, name) as
+    | { id: string; facility_group_name: string | null }
+    | undefined;
+  if (existingByName) {
+    backfillClinicGroupIfNeeded(existingByName.id, group, existingByName.facility_group_name);
+    return existingByName.id;
+  }
+
+  // EMR label variants (e.g. "Sunshine Pediatrics – Houston" vs "SUNSHINE PEDIATRICS HOUSTON")
+  // can produce the same slug — reuse that row instead of crashing.
+  const legacySlug = buildClinicSlugLegacy(organizationId, name);
+  const existingBySlug = findBySlug.get(legacySlug) as
+    | { id: string; facility_group_name: string | null }
+    | undefined;
+  if (existingBySlug) {
+    backfillClinicGroupIfNeeded(existingBySlug.id, group, existingBySlug.facility_group_name);
+    return existingBySlug.id;
+  }
+
+  const insertClinic = (slug: string): string => {
+    const id = randomUUID();
+    db.prepare(
+      `insert into practices
+         (id, name, slug, organization_id, location_name, facility_group_name,
+          state, city, logo_url, settings_json, created_at)
+       values (?, ?, ?, ?, ?, ?, null, null, null, ?, ?)`,
+    ).run(
+      id,
+      name,
+      slug,
+      organizationId,
+      name,
+      group,
+      JSON.stringify({ enabled_visit_types: ['new_patient', 'well_child', 'sick', 'follow_up'] }),
+      nowIso(),
+    );
+    return id;
+  };
+
+  try {
+    return insertClinic(legacySlug);
+  } catch (err) {
+    if (!isSqliteUniqueError(err)) throw err;
+    const raced = findBySlug.get(legacySlug) as { id: string } | undefined;
+    if (raced) return raced.id;
+    try {
+      return insertClinic(buildClinicSlugUnique(organizationId, name));
+    } catch (err2) {
+      if (!isSqliteUniqueError(err2)) throw err2;
+      const uniqueSlug = buildClinicSlugUnique(organizationId, name);
+      const raced2 = findBySlug.get(uniqueSlug) as { id: string } | undefined;
+      if (raced2) return raced2.id;
+      throw err2;
+    }
+  }
+}
+
 export function createStaffUser(input: {
   email: string;
   passwordHash: string;
   practiceId: string;
   role: 'admin' | 'staff';
-}): { id: string; email: string; practiceId: string; role: string } {
+  locationId?: string | null;
+}): { id: string; email: string; practiceId: string; role: string; locationId: string | null } {
   const id = randomUUID();
   db.prepare(
-    `insert into staff_users (id, email, password_hash, practice_id, role, is_active, created_at)
-     values (?, ?, ?, ?, ?, 1, ?)`,
-  ).run(id, input.email.toLowerCase().trim(), input.passwordHash, input.practiceId, input.role, nowIso());
-  return { id, email: input.email.toLowerCase().trim(), practiceId: input.practiceId, role: input.role };
+    `insert into staff_users (id, email, password_hash, practice_id, location_id, role, is_active, created_at)
+     values (?, ?, ?, ?, ?, ?, 1, ?)`,
+  ).run(
+    id,
+    input.email.toLowerCase().trim(),
+    input.passwordHash,
+    input.practiceId,
+    input.locationId ?? null,
+    input.role,
+    nowIso(),
+  );
+  return {
+    id,
+    email: input.email.toLowerCase().trim(),
+    practiceId: input.practiceId,
+    role: input.role,
+    locationId: input.locationId ?? null,
+  };
 }
 
 export function createPatientAccount(input: {
@@ -1154,12 +1397,12 @@ export function listSubmissionsForAccount(accountId: string, practiceId: string)
 }
 
 export function getStaffByEmail(email: string):
-  | { id: string; email: string; password_hash: string; practice_id: string; role: 'staff' | 'admin'; is_active: number }
+  | { id: string; email: string; password_hash: string; practice_id: string; location_id: string | null; role: 'staff' | 'admin'; is_active: number }
   | undefined {
   return db
-    .prepare('select id, email, password_hash, practice_id, role, is_active from staff_users where lower(email) = lower(?)')
+    .prepare('select id, email, password_hash, practice_id, location_id, role, is_active from staff_users where lower(email) = lower(?)')
     .get(email) as
-    | { id: string; email: string; password_hash: string; practice_id: string; role: 'staff' | 'admin'; is_active: number }
+    | { id: string; email: string; password_hash: string; practice_id: string; location_id: string | null; role: 'staff' | 'admin'; is_active: number }
     | undefined;
 }
 

@@ -28,6 +28,8 @@ export function StaffTemplatesPage({ token }: Props) {
   const [templateKey, setTemplateKey] = useState('patient_registration');
   const [templateName, setTemplateName] = useState('Patient Registration');
   const [file, setFile] = useState<File | null>(null);
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionMsg, setProvisionMsg] = useState('');
 
   async function loadTemplates() {
     if (!token) return;
@@ -81,6 +83,24 @@ export function StaffTemplatesPage({ token }: Props) {
       setError((e as Error).message);
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function provisionTemplates() {
+    if (!token) return;
+    setProvisionMsg('');
+    setProvisioning(true);
+    try {
+      const result = await api<{ message: string; copied: number; skipped: number }>('/api/staff/templates/provision', {
+        method: 'POST',
+        headers: authHeader(token),
+      });
+      setProvisionMsg(result.message);
+      if (result.copied > 0) await loadTemplates();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProvisioning(false);
     }
   }
 
@@ -148,8 +168,29 @@ export function StaffTemplatesPage({ token }: Props) {
         </button>
 
         <h3 style={{ marginTop: 24 }}>Your forms</h3>
+
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="secondary"
+            style={{ fontSize: 13 }}
+            onClick={provisionTemplates}
+            disabled={provisioning}
+            title="Copy the standard well-visit form library (EPDS, ASQ, M-CHAT, TB, Lead, PHQ-9 etc.) into your practice so auto-assignment works"
+          >
+            {provisioning ? 'Provisioning…' : '⚡ Add standard form library'}
+          </button>
+          {provisionMsg && (
+            <span style={{ fontSize: 13, color: 'var(--color-brand)' }}>{provisionMsg}</span>
+          )}
+        </div>
+
         {loading ? <p>Loading forms...</p> : null}
-        {!loading && templates.length === 0 ? <p>No forms yet.</p> : null}
+        {!loading && templates.length === 0 ? (
+          <p style={{ color: 'var(--color-text-muted, #888)' }}>
+            No forms yet. Click <strong>Add standard form library</strong> above to get started with the well-visit form set.
+          </p>
+        ) : null}
 
         {templates.length > 0 ? (
           <table className="table">

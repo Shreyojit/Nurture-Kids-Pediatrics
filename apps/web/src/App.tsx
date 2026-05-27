@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { AppNav } from './components/AppNav';
-import { getLocal, removeLocal, setLocal } from './lib/storage';
 import { AssignmentVerifyPage } from './pages/AssignmentVerifyPage';
 import { BundleVerifyPage } from './pages/BundleVerifyPage';
 import { PatientPortalPage } from './pages/PatientPortalPage';
@@ -11,6 +10,14 @@ import { ParentFormPage } from './pages/ParentFormPage';
 import { PdfFillPage } from './pages/PdfFillPage';
 import { ParentLoginPage } from './pages/ParentLoginPage';
 import { getPatientSession, clearPatientSession, type PatientSession } from './lib/patientSession';
+import {
+  clearStaffSession,
+  getStaffSession,
+  hydrateStaffSession,
+  setStaffSession,
+  staffSessionFromAuth,
+  type StaffSession,
+} from './lib/staffSession';
 import { ParentOverviewPage } from './pages/ParentOverviewPage';
 import { ParentStartPage } from './pages/ParentStartPage';
 import { StaffLoginPage } from './pages/StaffLoginPage';
@@ -21,48 +28,52 @@ import { StaffAssignmentsPage } from './pages/StaffAssignmentsPage';
 import { StaffSubmissionsPage } from './pages/StaffSubmissionsPage';
 import { StaffTemplateEditorPage } from './pages/StaffTemplateEditorPage';
 import { StaffTemplatesPage } from './pages/StaffTemplatesPage';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // VITE_APP_MODE: 'admin' | 'patient' | undefined (both)
 const APP_MODE = import.meta.env.VITE_APP_MODE as string | undefined;
 const isAdminOnly = APP_MODE === 'admin';
 const isPatientOnly = APP_MODE === 'patient';
 
-// Default practice slug for the patient portal landing
-const DEFAULT_SLUG = 'nurturekidspediatrics';
-
-function RedirectToPatientSignIn() {
-  return <Navigate to="/parent/login" replace />;
-}
-
 export function App() {
   const [patientSession, setPatientSession] = useState<PatientSession | null>(() => getPatientSession());
-  const [staffToken, setStaffToken] = useState<string | null>(() => getLocal('pediform_staff_token', null));
-  const [staffPracticeName, setStaffPracticeName] = useState<string | null>(
-    () => getLocal('pediform_staff_practice', null),
-  );
+  const [staffSession, setStaffSessionState] = useState<StaffSession | null>(() => getStaffSession());
+
+  useEffect(() => {
+    const existing = getStaffSession();
+    if (!existing?.token) return;
+    void hydrateStaffSession(existing.token).then((fresh) => {
+      if (fresh) setStaffSessionState(fresh);
+      else if (existing.email) setStaffSessionState(existing);
+    });
+  }, []);
 
   function onPatientSession() {
     setPatientSession(getPatientSession());
   }
 
-  function onStaffAuth(token: string, practiceName: string) {
-    setStaffToken(token);
-    setStaffPracticeName(practiceName);
-    setLocal('pediform_staff_token', token);
-    setLocal('pediform_staff_practice', practiceName);
+  function onStaffAuth(
+    token: string,
+    user: {
+      email: string;
+      role: string;
+      org_name?: string;
+      practice_name?: string;
+      location_name?: string | null;
+    },
+  ) {
+    const session = staffSessionFromAuth(token, user);
+    setStaffSession(session);
+    setStaffSessionState(session);
   }
 
   function logout() {
     setPatientSession(null);
-    setStaffToken(null);
-    setStaffPracticeName(null);
+    setStaffSessionState(null);
     clearPatientSession();
-    removeLocal('pediform_staff_token');
-    removeLocal('pediform_staff_practice');
+    clearStaffSession();
   }
 
-  // Determine the root redirect based on mode
   const rootRedirect = isAdminOnly
     ? <Navigate to="/staff/login" replace />
     : isPatientOnly
@@ -71,11 +82,15 @@ export function App() {
 
   return (
     <>
-      <AppNav patientSession={patientSession} staffToken={staffToken} staffPracticeName={staffPracticeName} onLogout={logout} appMode={APP_MODE} />
+      <AppNav
+        patientSession={patientSession}
+        staffSession={staffSession}
+        onLogout={logout}
+        appMode={APP_MODE}
+      />
       <Routes>
         <Route path="/" element={rootRedirect} />
 
-        {/* Patient routes — hidden in admin-only mode */}
         {!isAdminOnly && (
           <>
             <Route path="/p/:slug/forms" element={<Navigate to="/parent/login" replace />} />
@@ -95,26 +110,36 @@ export function App() {
           </>
         )}
 
-        {/* Staff routes — hidden in patient-only mode */}
         {!isPatientOnly && (
           <>
-            <Route path="/staff/login" element={<StaffLoginPage onAuthenticated={onStaffAuth} />} />
-            <Route path="/staff/register" element={<StaffRegisterPage onAuthenticated={onStaffAuth} />} />
-            <Route path="/staff/patients" element={<StaffPatientsPage token={staffToken} />} />
-            <Route path="/staff/assignments" element={<StaffAssignmentsPage token={staffToken} />} />
-            <Route path="/staff/submissions" element={<StaffSubmissionsPage token={staffToken} />} />
-            <Route path="/staff/patients/:id" element={<StaffPatientDetailPage token={staffToken} />} />
-            <Route path="/staff/templates" element={<StaffTemplatesPage token={staffToken} />} />
-            <Route path="/staff/templates/:id/editor" element={<StaffTemplateEditorPage token={staffToken} />} />
+            <Route
+              path="/staff/login"
+              element={
+                <StaffLoginPage
+                  onAuthenticated={(token, user) => onStaffAuth(token, user)}
+                />
+              }
+            />
+            <Route
+              path="/staff/register"
+              element={
+                <StaffRegisterPage
+                  onAuthenticated={(token, user) => onStaffAuth(token, user)}
+                />
+              }
+            />
+            <Route path="/staff/patients" element={<StaffPatientsPage token={staffSession?.token ?? null} />} />
+            <Route path="/staff/assignments" element={<StaffAssignmentsPage token={staffSession?.token ?? null} />} />
+            <Route path="/staff/submissions" element={<StaffSubmissionsPage token={staffSession?.token ?? null} />} />
+            <Route path="/staff/patients/:id" element={<StaffPatientDetailPage token={staffSession?.token ?? null} />} />
+            <Route path="/staff/templates" element={<StaffTemplatesPage token={staffSession?.token ?? null} />} />
+            <Route path="/staff/templates/:id/editor" element={<StaffTemplateEditorPage token={staffSession?.token ?? null} />} />
           </>
         )}
 
-        {/* Assignment fill links — accessible in all modes */}
-        {/* Practice-scoped URLs (new format: /:practice/fill/...) */}
         <Route path="/:practice/fill/portal/:token" element={<PatientPortalPage />} />
         <Route path="/:practice/fill/bundle/:token" element={<BundleVerifyPage />} />
         <Route path="/:practice/fill/:token" element={<AssignmentVerifyPage />} />
-        {/* Legacy URLs without practice prefix — kept for backward compat */}
         <Route path="/fill/portal/:token" element={<PatientPortalPage />} />
         <Route path="/fill/bundle/:token" element={<BundleVerifyPage />} />
         <Route path="/fill/:token" element={<AssignmentVerifyPage />} />
@@ -123,4 +148,9 @@ export function App() {
       </Routes>
     </>
   );
+}
+
+function RedirectToPatientSignIn() {
+  const { slug } = useParams<{ slug: string }>();
+  return <Navigate to={`/parent/login?practice=${slug ?? ''}`} replace />;
 }

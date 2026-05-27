@@ -3,12 +3,21 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 
 type Props = {
-  onAuthenticated: (token: string, practiceName: string) => void;
+  onAuthenticated: (
+    token: string,
+    user: {
+      email: string;
+      role: string;
+      org_name?: string;
+      practice_name?: string;
+      location_name?: string | null;
+    },
+  ) => void;
 };
 
 export function StaffLoginPage({ onAuthenticated }: Props) {
   const navigate = useNavigate();
-  const [practiceName, setPracticeName] = useState('');
+  const [practiceName, setPracticeName] = useState('Nurture Kids Pediatrics');
   const [email, setEmail] = useState('admin@nurturekidspediatrics.com');
   const [password, setPassword] = useState('Admin@12345');
   const [error, setError] = useState('');
@@ -19,11 +28,20 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
     setError('');
     setLoading(true);
     try {
-      const result = await api<{ token: string; user: { practice_name: string } }>('/api/staff/login', {
+      const result = await api<{
+        token: string;
+        user: {
+          email: string;
+          role: string;
+          org_name: string;
+          location_name?: string | null;
+          practice_name: string;
+        };
+      }>('/api/staff/login', {
         method: 'POST',
         body: JSON.stringify({ email, password, practice_name: practiceName }),
       });
-      onAuthenticated(result.token, result.user.practice_name);
+      onAuthenticated(result.token, result.user);
       navigate('/staff/patients');
     } catch (err) {
       setError((err as Error).message);
@@ -42,13 +60,13 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
               Admin login
             </h1>
             <p className="patient-portal-subtitle" style={{ margin: 0 }}>
-              Sign in with your practice credentials.
+              Sign in with your organization credentials.
             </p>
           </div>
 
           <form onSubmit={login}>
             <div className="patient-portal-field" style={{ marginBottom: 14 }}>
-              <label htmlFor="admin-practice">Practice name</label>
+              <label htmlFor="admin-practice">Organization name</label>
               <input
                 id="admin-practice"
                 value={practiceName}
@@ -91,7 +109,7 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
           <hr className="divider" />
 
           <p className="text-muted text-center" style={{ margin: '0 0 12px' }}>
-            New practice?{' '}
+            New organization?{' '}
             <Link to="/staff/register">Create an account</Link>
           </p>
         </div>

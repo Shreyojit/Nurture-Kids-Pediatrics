@@ -21,6 +21,9 @@ export type PatientExcelImportRow = {
   appointmentVisitType: string | null;
   appointmentVisitReason: string | null;
   appointmentProviderName: string | null;
+  /** Appointment Facility Group Name — the regional grouping (e.g. "Texas Region"). */
+  appointmentFacilityGroupName: string | null;
+  /** Appointment Facility Name — the actual clinic (e.g. "Sunshine Pediatrics – Houston"). */
   appointmentFacilityName: string | null;
   guardianPhones: string | null;
   guardianEmail: string | null;
@@ -279,7 +282,10 @@ export function parsePatientExcelBuffer(buffer: Buffer): PatientExcelParseResult
       appointmentVisitType: visitRaw,
       appointmentVisitReason: str(m['visit reason']) || null,
       appointmentProviderName: str(m['appointment provider name']) || null,
-      appointmentFacilityName: str(m['appointment facility name']) || null,
+      appointmentFacilityGroupName:
+        mget(m, 'appointment facility group name', 'facility group name', 'facility group', 'region') || null,
+      appointmentFacilityName:
+        mget(m, 'appointment facility name', 'facility name', 'clinic name', 'clinic') || null,
       guardianPhones: buildPhones(m),
       guardianEmail: mget(m, 'patient e-mail', 'patient email') || null,
       guardianAddress: buildAddress(m),

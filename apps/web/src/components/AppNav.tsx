@@ -1,15 +1,19 @@
 import { Link, useLocation } from 'react-router-dom';
 import type { PatientSession } from '../lib/patientSession';
+import type { StaffSession } from '../lib/staffSession';
 
 type Props = {
-  staffToken?: string | null;
-  staffPracticeName?: string | null;
+  staffSession?: StaffSession | null;
   patientSession?: PatientSession | null;
   onLogout?: () => void;
   appMode?: string;
 };
 
-export function AppNav({ staffToken, staffPracticeName, patientSession, onLogout, appMode }: Props) {
+function formatStaffRole(role: StaffSession['role']): string {
+  return role === 'admin' ? 'Admin' : 'Staff';
+}
+
+export function AppNav({ staffSession, patientSession, onLogout, appMode }: Props) {
   const location = useLocation();
   const isFamilyFillLink =
     location.pathname.includes('/fill/portal') || location.pathname.includes('/fill/bundle');
@@ -92,7 +96,7 @@ export function AppNav({ staffToken, staffPracticeName, patientSession, onLogout
     <span className="mode-badge mode-badge-patient">PATIENT</span>
   ) : null;
 
-  const isStaffRoute = staffToken && !isPatientOnly;
+  const isStaffRoute = staffSession?.token && !isPatientOnly;
 
   return (
     <>
@@ -128,11 +132,26 @@ export function AppNav({ staffToken, staffPracticeName, patientSession, onLogout
           </div>
         </div>
       </div>
-      {isStaffRoute && staffPracticeName ? (
+      {isStaffRoute && staffSession ? (
         <div className="practice-bar">
-          <div className="container" style={{ padding: '0 16px' }}>
-            <span className="practice-bar-label">Practice:</span>
-            <span className="practice-bar-name">{staffPracticeName}</span>
+          <div className="container practice-bar-inner">
+            <div className="practice-bar-org">
+              <span className="practice-bar-label">Organization</span>
+              <span className="practice-bar-name">{staffSession.orgName}</span>
+              {staffSession.locationName ? (
+                <>
+                  <span className="practice-bar-sep">›</span>
+                  <span className="practice-bar-branch">{staffSession.locationName}</span>
+                </>
+              ) : (
+                <span className="practice-bar-meta">All locations</span>
+              )}
+            </div>
+            <div className="practice-bar-user">
+              <span className="practice-bar-label">Signed in as</span>
+              <span className="practice-bar-email">{staffSession.email}</span>
+              <span className="practice-bar-role">{formatStaffRole(staffSession.role)}</span>
+            </div>
           </div>
         </div>
       ) : null}

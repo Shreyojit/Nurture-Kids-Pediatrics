@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { db, nowIso } from './database.js';
 import { config } from '../config.js';
 const __filename = fileURLToPath(import.meta.url);
@@ -12,6 +13,10 @@ const SEEDS_DIR = path.join(__dirname, '..', 'seeds');
 const PDFS_DIR = path.join(SEEDS_DIR, 'pdfs');
 const DATA_FILE = path.join(SEEDS_DIR, 'templateSeedData.json');
 
+/** The slug of the reference practice whose templates are used as the system library. */
+const REFERENCE_PRACTICE_SLUG = 'nurturekidspediatrics';
+
+/** Shape of a template row as stored in the seed JSON (no PDF path columns). */
 type TemplateRecord = {
   id: string;
   template_key: string;
@@ -20,6 +25,13 @@ type TemplateRecord = {
   status: string;
   created_at: string;
   updated_at: string;
+};
+
+/** Full DB row shape (includes PDF path columns). */
+type TemplateDbRow = TemplateRecord & {
+  practice_id: string;
+  source_pdf_path: string;
+  acroform_pdf_path: string | null;
 };
 
 type FieldRecord = {
@@ -226,4 +238,141 @@ export function seedTemplates(): void {
   } catch (err) {
     console.error('[seed] template seed failed:', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Copy all published templates from the reference practice (nurturekidspediatrics) to
+ * `targetPracticeId`. Each template gets a new UUID so it is fully owned by the new practice
+ * and editable independently. PDF files are shared at the filesystem level (same relative paths).
+ * Already-present templates (same template_key + version for that practice) are skipped.
+ *
+ * Called automatically when a new practice signs up, and available via the admin API for
+ * practices that were created before this feature existed.
+ *
+ * Returns a summary of what was copied.
+ */
+export function provisionDefaultTemplatesForPractice(
+  targetPracticeId: string,
+  byUserId: string,
+): { copied: number; skipped: number; errors: string[] } {
+  const refPractice = db
+    .prepare('select id from practices where slug = ?')
+    .get(REFERENCE_PRACTICE_SLUG) as { id: string } | undefined;
+
+  if (!refPractice) {
+    return { copied: 0, skipped: 0, errors: ['Reference practice not found — templates cannot be provisioned'] };
+  }
+
+  const refTemplates = db
+    .prepare(`select * from pdf_templates where practice_id = ? and status = 'published' order by template_key, version`)
+    .all(refPractice.id) as TemplateDbRow[];
+
+  if (refTemplates.length === 0) {
+    return { copied: 0, skipped: 0, errors: ['Reference practice has no published templates'] };
+  }
+
+  const errors: string[] = [];
+  const now = nowIso();
+  let copied = 0;
+  let skipped = 0;
+
+  const copyAll = db.transaction(() => {
+    for (const src of refTemplates) {
+      // Check if this practice already has this template_key at this version
+      const alreadyExists = db
+        .prepare('select id from pdf_templates where practice_id = ? and template_key = ? and version = ?')
+        .get(targetPracticeId, src.template_key, src.version);
+
+      if (alreadyExists) {
+        skipped += 1;
+        continue;
+      }
+
+      const newTemplateId = randomUUID();
+
+      // Copy the template row — same PDF paths (shared filesystem) and status
+      try {
+        db.prepare(
+          `insert into pdf_templates
+             (id, practice_id, template_key, version, name,
+              source_pdf_path, acroform_pdf_path, status,
+              created_by, created_at, updated_at)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          newTemplateId,
+          targetPracticeId,
+          src.template_key,
+          src.version,
+          src.name,
+          src.source_pdf_path,
+          src.acroform_pdf_path ?? null,
+          'published',
+          byUserId,
+          now,
+          now,
+        );
+      } catch (e) {
+        errors.push(`template ${src.template_key}@v${src.version}: ${(e as Error).message}`);
+        continue;
+      }
+
+      // Copy field groups, remapping template_id
+      const srcGroups = db
+        .prepare('select * from field_groups where template_id = ?')
+        .all(src.id) as GroupRecord[];
+      const groupIdMap = new Map<string, string>();
+      for (const g of srcGroups) {
+        const newGroupId = randomUUID();
+        groupIdMap.set(g.id, newGroupId);
+        try {
+          db.prepare(
+            `insert into field_groups
+               (id, template_id, group_type, group_name, acro_group_name, created_at, updated_at)
+             values (?, ?, ?, ?, ?, ?, ?)`,
+          ).run(newGroupId, newTemplateId, g.group_type, g.group_name, g.acro_group_name, now, now);
+        } catch {
+          // non-fatal — field won't be grouped
+        }
+      }
+
+      // Copy template fields, remapping template_id and group_id
+      const srcFields = db
+        .prepare('select * from pdf_template_fields where template_id = ? order by display_order asc')
+        .all(src.id) as FieldRecord[];
+      for (const f of srcFields) {
+        const newFieldId = randomUUID();
+        const remappedGroupId = f.group_id ? (groupIdMap.get(f.group_id) ?? null) : null;
+        try {
+          db.prepare(
+            `insert into pdf_template_fields
+               (id, template_id, field_id, field_name, field_type, acro_field_name, required,
+                page_number, x, y, width, height, options_json, validation_json,
+                section_key, display_order, font_size, group_id, group_value, parent_field_id,
+                created_at, updated_at)
+             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            newFieldId, newTemplateId, f.field_id, f.field_name, f.field_type,
+            f.acro_field_name, f.required, f.page_number,
+            f.x, f.y, f.width, f.height,
+            f.options_json, f.validation_json, f.section_key ?? null,
+            f.display_order, f.font_size ?? 12,
+            remappedGroupId, f.group_value ?? null, f.parent_field_id ?? null,
+            now, now,
+          );
+        } catch {
+          // non-fatal
+        }
+      }
+
+      copied += 1;
+    }
+  });
+
+  try {
+    copyAll();
+  } catch (e) {
+    errors.push(`Transaction failed: ${(e as Error).message}`);
+  }
+
+  return { copied, skipped, errors };
 }

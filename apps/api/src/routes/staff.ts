@@ -27,10 +27,14 @@ import {
   upsertOneToOne,
   findPracticeByName,
   findPracticeById,
-  createPractice,
+  createOrganization,
+  createLocation,
+  findLocationByName,
+  listLocationsForOrg,
   createStaffUser,
 } from '../db/queries.js';
-import { parseJson } from '../db/database.js';
+import { provisionDefaultTemplatesForPractice } from '../db/seedTemplates.js';
+import { db, parseJson } from '../db/database.js';
 import { config, resolveDataPath } from '../config.js';
 import { ensurePatientPortalToken, regeneratePatientPortalToken } from '../db/portalQueries.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -176,12 +180,24 @@ staffRouter.post('/login', (req, res) => {
     return;
   }
 
+  const locationId = (user.location_id as string | null) ?? null;
+
   const token = signToken({
     id: user.id as string,
     role: user.role as 'staff' | 'admin',
     practiceId: user.practice_id as string,
+    locationId,
     email: user.email as string,
   });
+
+  // Resolve location display name if available
+  let locationName: string | null = null;
+  if (locationId) {
+    const locRow = db.prepare('select location_name, state, city from practices where id = ?').get(locationId) as
+      | { location_name: string | null; state: string | null; city: string | null }
+      | undefined;
+    locationName = locRow?.location_name ?? null;
+  }
 
   ok(res, {
     token,
@@ -189,6 +205,11 @@ staffRouter.post('/login', (req, res) => {
       id: user.id,
       email: user.email,
       role: user.role,
+      org_id: user.practice_id,
+      org_name: practice.name,
+      location_id: locationId,
+      location_name: locationName,
+      // Legacy fields
       practice_id: user.practice_id,
       practice_name: practice.name,
     },
@@ -196,9 +217,20 @@ staffRouter.post('/login', (req, res) => {
 });
 
 const staffRegisterSchema = z.object({
-  practice_name: z.string().min(2, 'Practice name must be at least 2 characters'),
+  /** The root organization / group name. Required. */
+  org_name: z.string().min(2, 'Organization name must be at least 2 characters'),
+  /**
+   * Optional location / branch name within the org.
+   * e.g. "Texas", "Sunshine Pediatrics", "Downtown Office"
+   * If omitted the staff member is org-wide (no specific branch).
+   */
+  location_name: z.string().optional(),
+  state: z.string().max(50).optional(),
+  city: z.string().max(100).optional(),
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  // Deprecated alias — still accepted for older clients
+  practice_name: z.string().optional(),
 });
 
 staffRouter.post('/register', (req, res) => {
@@ -208,7 +240,14 @@ staffRouter.post('/register', (req, res) => {
     return;
   }
 
-  const { practice_name, email, password } = parsed.data;
+  // Accept either the new `org_name` or the legacy `practice_name` field
+  const orgName = (parsed.data.org_name || parsed.data.practice_name || '').trim();
+  if (!orgName) {
+    fail(res, 'VALIDATION_ERROR', 'Organization name is required', 422);
+    return;
+  }
+
+  const { location_name, state, city, email, password } = parsed.data;
   const normalizedEmail = email.toLowerCase().trim();
 
   const existingUser = getStaffByEmail(normalizedEmail);
@@ -217,23 +256,51 @@ staffRouter.post('/register', (req, res) => {
     return;
   }
 
-  let practice = findPracticeByName(practice_name);
-  if (!practice) {
-    practice = createPractice(practice_name);
+  // ── 1. Resolve (or create) the root organization ─────────────────────────
+  let org = findPracticeByName(orgName);
+  const isNewOrg = !org;
+  if (!org) {
+    org = createOrganization(orgName);
+  }
+  const orgId = org.id as string;
+
+  // ── 2. Resolve (or create) the location/branch, if specified ─────────────
+  let locationId: string | null = null;
+  if (location_name?.trim()) {
+    const trimmedLoc = location_name.trim();
+    let loc = findLocationByName(orgId, trimmedLoc);
+    if (!loc) {
+      loc = createLocation({ organizationId: orgId, locationName: trimmedLoc, state, city });
+    }
+    locationId = loc.id as string;
   }
 
+  // ── 3. Create staff user ──────────────────────────────────────────────────
   const passwordHash = hashPassword(password);
   const newUser = createStaffUser({
     email: normalizedEmail,
     passwordHash,
-    practiceId: practice.id as string,
+    practiceId: orgId,
+    locationId,
     role: 'admin',
   });
 
+  // ── 4. Provision standard forms for brand-new orgs ────────────────────────
+  if (isNewOrg) {
+    const provision = provisionDefaultTemplatesForPractice(orgId, newUser.id);
+    if (provision.errors.length > 0) {
+      console.warn('[register] template provisioning warnings for', orgName, provision.errors);
+    } else if (provision.copied > 0) {
+      console.log(`[register] provisioned ${provision.copied} template(s) for new org "${orgName}"`);
+    }
+  }
+
+  // ── 5. Sign JWT ───────────────────────────────────────────────────────────
   const token = signToken({
     id: newUser.id,
     role: 'admin',
-    practiceId: newUser.practiceId,
+    practiceId: orgId,
+    locationId,
     email: newUser.email,
   });
 
@@ -243,13 +310,57 @@ staffRouter.post('/register', (req, res) => {
       id: newUser.id,
       email: newUser.email,
       role: 'admin',
-      practice_id: practice.id,
-      practice_name: practice.name,
+      org_id: orgId,
+      org_name: org.name,
+      location_id: locationId,
+      location_name: locationId ? location_name : null,
+      // Legacy field kept for backward compat
+      practice_id: orgId,
+      practice_name: org.name,
     },
   });
 });
 
 staffRouter.use(authMiddleware('staff'));
+
+/** Current logged-in staff profile (org, branch, role). */
+staffRouter.get('/me', (req, res) => {
+  const org = findPracticeById(req.user!.practiceId);
+  let locationName: string | null = null;
+  let locationState: string | null = null;
+  let facilityGroupName: string | null = null;
+
+  if (req.user!.locationId) {
+    const loc = db
+      .prepare(
+        `select location_name, state, facility_group_name from practices where id = ?`,
+      )
+      .get(req.user!.locationId) as
+      | { location_name: string | null; state: string | null; facility_group_name: string | null }
+      | undefined;
+    locationName = loc?.location_name ?? null;
+    locationState = loc?.state ?? null;
+    facilityGroupName = loc?.facility_group_name ?? null;
+  }
+
+  ok(res, {
+    id: req.user!.id,
+    email: req.user!.email,
+    role: req.user!.role,
+    org_id: req.user!.practiceId,
+    org_name: org?.name ?? null,
+    location_id: req.user!.locationId ?? null,
+    location_name: locationName,
+    location_state: locationState,
+    facility_group_name: facilityGroupName,
+  });
+});
+
+/** List all locations/branches for the logged-in org. */
+staffRouter.get('/locations', (req, res) => {
+  const rows = listLocationsForOrg(req.user!.practiceId);
+  ok(res, rows);
+});
 
 staffRouter.get('/patients', (req, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
@@ -384,6 +495,23 @@ staffRouter.get('/submissions', (req, res) => {
 staffRouter.post('/submissions/expire-stale', (_req, res) => {
   const count = expireStaleSubmissions(48);
   ok(res, { expired: count });
+});
+
+/**
+ * Provision the standard form library for this practice.
+ * Safe to call multiple times — already-present templates are skipped.
+ * Useful for practices that were created before auto-provisioning was introduced.
+ */
+staffRouter.post('/templates/provision', (req, res) => {
+  const result = provisionDefaultTemplatesForPractice(req.user!.practiceId, req.user!.id);
+  ok(res, {
+    message: result.copied > 0
+      ? `Provisioned ${result.copied} template(s) for your practice.`
+      : result.skipped > 0
+        ? `All ${result.skipped} standard template(s) are already present.`
+        : 'Nothing to provision.',
+    ...result,
+  });
 });
 
 staffRouter.get('/submissions/:id/json', (req, res) => {

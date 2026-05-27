@@ -357,6 +357,8 @@ export function runMigrations(): void {
   fixAsq30RadioGroups();
   renameSunshinePractice();
   ensurePatientDocumentsTable();
+  ensureOrgLocationHierarchy();
+  ensureFacilityGroupName();
 }
 
 function renameSunshinePractice(): void {
@@ -714,5 +716,72 @@ function ensurePatientDocumentsTable(): void {
     );
     create index if not exists idx_patient_documents_patient on patient_documents(patient_id);
     create index if not exists idx_patient_documents_practice on patient_documents(practice_id);
+  `);
+}
+
+/**
+ * Adds multi-location / org hierarchy support to the existing schema.
+ *
+ * practices table gets:
+ *   organization_id  – NULL = this IS the root org; non-NULL = this is a location/branch
+ *   location_name    – human-friendly branch label e.g. "Texas", "West Side", "Downtown"
+ *   state            – two-letter state code e.g. "TX"
+ *   city             – city name e.g. "Houston"
+ *
+ * patients, staff_users, form_assignments get:
+ *   location_id      – which specific branch this record is tied to (nullable; org-wide data
+ *                      still isolated by practice_id which always holds the root org id)
+ *
+ * Backward compat: every existing practice has organization_id = NULL (they ARE root orgs).
+ * Existing patients/staff have location_id = NULL (unspecified branch, still visible org-wide).
+ */
+function ensureOrgLocationHierarchy(): void {
+  const addCol = (table: string, col: string, ddl: string) => {
+    const cols = db.prepare(`pragma table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === col)) {
+      db.exec(`alter table ${table} add column ${ddl}`);
+    }
+  };
+
+  // practices → org/location tree
+  addCol('practices', 'organization_id', 'organization_id text references practices(id)');
+  addCol('practices', 'location_name',   'location_name text');
+  addCol('practices', 'state',           'state text');
+  addCol('practices', 'city',            'city text');
+
+  // operational location tracking
+  addCol('patients',         'location_id', 'location_id text references practices(id)');
+  addCol('staff_users',      'location_id', 'location_id text references practices(id)');
+  addCol('form_assignments', 'location_id', 'location_id text references practices(id)');
+
+  db.exec(`
+    create index if not exists idx_practices_org on practices(organization_id)
+      where organization_id is not null;
+    create index if not exists idx_patients_location on patients(location_id)
+      where location_id is not null;
+  `);
+}
+
+/**
+ * Adds facility_group_name (= "Appointment Facility Group Name" / region) to:
+ *   practices  – stored on the clinic/location row to indicate which region it belongs to
+ *   appointments – stored alongside facility_name so historical data is preserved
+ *
+ * This completes the 3-level EMR hierarchy:
+ *   Practice Name → Facility Group Name (region) → Facility Name (clinic)
+ */
+function ensureFacilityGroupName(): void {
+  const addCol = (table: string, col: string, ddl: string) => {
+    const cols = db.prepare(`pragma table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === col)) {
+      db.exec(`alter table ${table} add column ${ddl}`);
+    }
+  };
+  addCol('practices',    'facility_group_name', 'facility_group_name text');
+  addCol('appointments', 'facility_group_name', 'facility_group_name text');
+  db.exec(`
+    create index if not exists idx_practices_facility_group
+      on practices(organization_id, facility_group_name)
+      where facility_group_name is not null;
   `);
 }
