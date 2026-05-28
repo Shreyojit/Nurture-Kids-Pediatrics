@@ -110,7 +110,7 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
               </>
             ) : (
               <>
-                {!isAdminOnly && <Link to="/parent/login">Patient sign-in</Link>}
+                {!isPatientOnly && <Link to="/parent/login">Patient sign-in</Link>}
                 {!isPatientOnly && <Link to="/staff/login">Admin Login</Link>}
               </>
             )}

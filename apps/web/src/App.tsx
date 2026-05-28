@@ -74,11 +74,9 @@ export function App() {
     clearStaffSession();
   }
 
-  const rootRedirect = isAdminOnly
-    ? <Navigate to="/staff/login" replace />
-    : isPatientOnly
-      ? <Navigate to="/parent/login" replace />
-      : <HomePage />;
+  const rootRedirect = isPatientOnly
+    ? <Navigate to="/parent/login" replace />
+    : <HomePage />;
 
   return (
     <>
