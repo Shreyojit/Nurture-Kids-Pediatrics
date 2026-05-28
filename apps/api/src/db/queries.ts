@@ -1025,6 +1025,32 @@ export function exportSubmissionJson(submissionId: string, staffUserId: string):
   };
 }
 
+/** Read-only version of exportSubmissionJson — no status side-effects, for patient self-downloads. */
+export function readSubmissionForExport(submissionId: string): Record<string, unknown> {
+  const submission = getSubmissionByIdOrThrow(submissionId);
+  const payload = parseJson<Record<string, unknown>>(submission.form_data_json, {});
+  const responses = parseJson<Record<string, unknown>>(submission.responses_json, {});
+  const patientDetail = submission.patient_id
+    ? getPatientDetail(submission.patient_id, submission.practice_id)
+    : null;
+  return {
+    submission_id: submission.id,
+    practice_id: submission.practice_id,
+    patient_id: submission.patient_id,
+    form_id: submission.form_id,
+    template_version: submission.template_version,
+    template_id: submission.template_id,
+    template_version_num: submission.template_version_num,
+    status: submission.status,
+    completed_pdf_path: submission.completed_pdf_path,
+    submitted_at: submission.submitted_at,
+    confirmation_code: submission.confirmation_code,
+    payload,
+    responses,
+    normalized_patient_data: patientDetail,
+  };
+}
+
 /** Legacy URL slugs still used in bookmarks/links → current practice slug in DB. */
 const PRACTICE_SLUG_ALIASES: Record<string, string> = {
   'sunshine-pediatrics': 'nurturekidspediatrics',

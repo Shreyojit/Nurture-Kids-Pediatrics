@@ -149,6 +149,31 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
     navigate('/parent/login');
   }
 
+  async function downloadSubmissionPdf(submissionId: string, templateName: string) {
+    if (!session) return;
+    setDownloadingId(submissionId);
+    try {
+      const params = new URLSearchParams({
+        first_name: session.identity.firstName,
+        last_name: session.identity.lastName,
+        dob: session.identity.dob,
+      });
+      const url = `${API_BASE}/api/patient-portal/submissions/${submissionId}/pdf?${params}`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Download failed');
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${templateName}.pdf`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      alert('Could not download PDF. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   async function downloadDocument(docId: string, filename: string) {
     if (!session) return;
     setDownloadingId(docId);
@@ -297,7 +322,19 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
                           ) : null}
                           <p className="patient-portal-form-desc">Submitted — thank you!</p>
                         </div>
-                        <span className="patient-portal-done-label">Done</span>
+                        {form.session_id ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+                            onClick={() => downloadSubmissionPdf(form.session_id!, form.template_name)}
+                            disabled={downloadingId === form.session_id}
+                          >
+                            {downloadingId === form.session_id ? 'Downloading…' : 'Download PDF'}
+                          </button>
+                        ) : (
+                          <span className="patient-portal-done-label">Done</span>
+                        )}
                       </div>
                     ))}
                   </div>

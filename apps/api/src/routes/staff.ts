@@ -39,8 +39,29 @@ import { config, resolveDataPath } from '../config.js';
 import { ensurePatientPortalToken, regeneratePatientPortalToken } from '../db/portalQueries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { parsePatientExcelBuffer } from '../lib/patientExcelImport.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  ensureDocumentStorageDir,
+  insertPatientDocument,
+  listDocumentsForStaff,
+  getPatientDocumentById,
+  resolveDocumentPath,
+  deletePatientDocument,
+} from '../db/patientDocumentQueries.js';
 
 export const staffRouter = Router();
+
+const documentMemoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const okMime = /^(application\/pdf|image\/(jpeg|png|gif|webp|heic|heif))$/.test(file.mimetype);
+    const okExt = /\.(pdf|jpg|jpeg|png|gif|webp|heic|heif)$/i.test(file.originalname ?? '');
+    if (okMime || okExt) { cb(null, true); return; }
+    cb(new Error('Only PDF or image files are allowed'));
+  },
+});
 
 const excelMemoryUpload = multer({
   storage: multer.memoryStorage(),
@@ -409,6 +430,58 @@ function practiceSlug(practiceId: string): string {
   const practice = findPracticeById(practiceId) as { slug?: string } | undefined;
   return practice?.slug ?? 'unknown';
 }
+
+/** GET /api/staff/documents?patient_id=:id — list documents for a patient. */
+staffRouter.get('/documents', (req, res) => {
+  const { patient_id } = req.query as Record<string, string>;
+  const docs = listDocumentsForStaff(req.user!.practiceId, patient_id || undefined);
+  ok(res, docs);
+});
+
+/** POST /api/staff/documents — upload a file for a patient. */
+staffRouter.post('/documents', documentMemoryUpload.single('file'), (req, res) => {
+  const { patient_id, document_type } = req.body as Record<string, string>;
+  if (!patient_id || !document_type || !req.file) {
+    fail(res, 'VALIDATION_ERROR', 'patient_id, document_type, and file are required', 422);
+    return;
+  }
+  const patient = getPatientDetail(patient_id, req.user!.practiceId);
+  if (!patient) { fail(res, 'NOT_FOUND', 'Patient not found', 404); return; }
+
+  const dir = ensureDocumentStorageDir(req.user!.practiceId, patient_id);
+  const ext = path.extname(req.file.originalname) || '';
+  const stored = path.join(dir, `${Date.now()}${ext}`);
+  fs.writeFileSync(stored, req.file.buffer);
+
+  const doc = insertPatientDocument({
+    practiceId: req.user!.practiceId,
+    patientId: patient_id,
+    documentType: document_type,
+    originalFilename: req.file.originalname,
+    absolutePath: stored,
+    uploadedBy: req.user!.id,
+  });
+  ok(res, doc);
+});
+
+/** DELETE /api/staff/documents/:id — delete a patient document. */
+staffRouter.delete('/documents/:id', (req, res) => {
+  const doc = getPatientDocumentById(req.params.id, req.user!.practiceId);
+  if (!doc) { fail(res, 'NOT_FOUND', 'Document not found', 404); return; }
+  const absPath = resolveDocumentPath(doc);
+  if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+  deletePatientDocument(req.params.id, req.user!.practiceId);
+  ok(res, { deleted: true });
+});
+
+/** GET /api/staff/documents/:id/download — staff download of a patient document. */
+staffRouter.get('/documents/:id/download', (req, res) => {
+  const doc = getPatientDocumentById(req.params.id, req.user!.practiceId);
+  if (!doc) { fail(res, 'NOT_FOUND', 'Document not found', 404); return; }
+  const absPath = resolveDocumentPath(doc);
+  if (!fs.existsSync(absPath)) { fail(res, 'NOT_FOUND', 'File not found on server', 404); return; }
+  res.download(absPath, doc.original_filename);
+});
 
 staffRouter.get('/patients/:id/portal-link', async (req, res) => {
   const auth = req.user as { id: string; practiceId: string };

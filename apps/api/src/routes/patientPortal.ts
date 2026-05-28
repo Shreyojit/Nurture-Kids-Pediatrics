@@ -7,7 +7,7 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import { z } from 'zod';
 import { ok, fail } from '../lib/response.js';
-import { findPracticeBySlug, findPatientsByIdentity } from '../db/queries.js';
+import { findPracticeBySlug, findPatientsByIdentity, readSubmissionForExport } from '../db/queries.js';
 import { getPatientNextAppointment } from '../db/portalQueries.js';
 import {
   getDocumentForIdentityDownload,
@@ -20,6 +20,13 @@ import {
   buildPortalFormsForPatient,
   pickEarliestAppointment,
 } from '../lib/patientPortalAccess.js';
+import { buildPatientRegistrationFileName, generateSubmissionPdf } from '../lib/pdfGenerator.js';
+import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
+import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
+import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
+import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
+import { getTemplateBySubmissionContext } from '../db/templateQueries.js';
+import { resolveDataPath } from '../config.js';
 
 export const patientPortalRouter = Router();
 
@@ -174,6 +181,77 @@ patientPortalRouter.get('/documents/:id/download', (req, res) => {
   }
 
   res.download(absPath, doc.original_filename);
+});
+
+/** GET /api/patient-portal/submissions/:id/pdf — patient self-download of a completed submission. */
+patientPortalRouter.get('/submissions/:id/pdf', async (req, res) => {
+  const { first_name, last_name, dob } = req.query as Record<string, string>;
+  if (!first_name || !last_name || !dob) {
+    fail(res, 'VALIDATION_ERROR', 'first_name, last_name, and dob are required', 422);
+    return;
+  }
+
+  const dobNorm = String(dob).trim().slice(0, 10);
+  const row = db
+    .prepare(
+      `select s.id from submissions s
+       join patients p on p.id = s.patient_id and p.practice_id = s.practice_id
+       where s.id = ?
+         and lower(trim(p.child_first_name)) = lower(trim(?))
+         and lower(trim(p.child_last_name)) = lower(trim(?))
+         and p.child_dob = ?
+       limit 1`,
+    )
+    .get(req.params.id, first_name.trim(), last_name.trim(), dobNorm) as { id: string } | undefined;
+
+  if (!row) {
+    fail(res, 'NOT_FOUND', 'Submission not found', 404);
+    return;
+  }
+
+  try {
+    const exported = readSubmissionForExport(req.params.id);
+    const templateContext = getTemplateBySubmissionContext(req.params.id);
+    const templateKey = String(templateContext?.template.template_key ?? '');
+    const responseMap = (exported.responses ?? {}) as Record<string, unknown>;
+    const overlaySchema = parseTemplateFieldSchema(templateContext?.template.field_schema_json);
+
+    let pdfBytes: Uint8Array;
+    if (
+      templateContext &&
+      isMchatTemplateKey(templateKey) &&
+      hasOverlayFields(overlaySchema) &&
+      templateContext.template.source_pdf_path
+    ) {
+      pdfBytes = await fillPdfWithOverlaySchema({
+        sourcePdfPath: resolveDataPath(templateContext.template.source_pdf_path),
+        schema: overlaySchema,
+        responses: responseMap,
+      });
+    } else if (templateContext?.template.acroform_pdf_path) {
+      pdfBytes = await fillAcroformPdfWithResponses({
+        acroformPdfPath: resolveDataPath(templateContext.template.acroform_pdf_path),
+        fields: templateContext.fields as Array<{
+          field_id: string; field_name: string; field_type: string; acro_field_name: string;
+          page_number: number; x: number; y: number; width: number; height: number;
+          options_json?: string | unknown[]; group_id?: string | null; group_value?: string | null;
+        }>,
+        responses: responseMap,
+        groups: templateContext.groups as Array<{
+          id: string; group_type: string; group_name: string; acro_group_name: string;
+        }>,
+      });
+    } else {
+      pdfBytes = await generateSubmissionPdf(exported);
+    }
+
+    const fileName = buildPatientRegistrationFileName(exported);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(Buffer.from(pdfBytes));
+  } catch (error) {
+    fail(res, 'PDF_EXPORT_ERROR', (error as Error).message || 'Failed to export PDF', 500);
+  }
 });
 
 /** GET /api/patient-portal/:slug — return practice info (legacy / direct links). */

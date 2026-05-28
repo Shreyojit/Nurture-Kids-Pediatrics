@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
-import { PATIENT_DOCUMENT_TYPE_OPTIONS, patientDocumentTypeLabel } from '../lib/patientDocumentTypes';
 import { formatAssignmentStatus } from '../lib/staffLabels';
+import { PATIENT_DOCUMENT_TYPE_OPTIONS, patientDocumentTypeLabel } from '../lib/patientDocumentTypes';
 
 type Props = {
   token: string | null;
-};
-
-type FieldConfig = {
-  key: string;
-  label: string;
-  type?: 'text' | 'number' | 'date' | 'checkbox';
 };
 
 type TemplateAnswerField = {
@@ -46,121 +40,6 @@ type SubmissionResponsesPayload = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
-
-const rowTableConfigs: Record<string, FieldConfig[]> = {
-  guardians: [
-    { key: 'guardian_index', label: 'Guardian #', type: 'number' },
-    { key: 'full_name', label: 'Full Name' },
-    { key: 'relationship', label: 'Relationship' },
-    { key: 'phone', label: 'Phone' },
-    { key: 'email', label: 'Email' },
-    { key: 'address', label: 'Address' },
-    { key: 'employer', label: 'Employer' },
-    { key: 'ssn_last4', label: 'SSN Last 4' },
-  ],
-  insurance_policies: [
-    { key: 'policy_order', label: 'Policy #', type: 'number' },
-    { key: 'company', label: 'Company' },
-    { key: 'subscriber_name', label: 'Subscriber Name' },
-    { key: 'subscriber_dob', label: 'Subscriber DOB', type: 'date' },
-    { key: 'group_number', label: 'Group #' },
-    { key: 'member_id', label: 'Member ID' },
-  ],
-  allergies: [
-    { key: 'allergy_type', label: 'Type' },
-    { key: 'allergy_name', label: 'Allergy' },
-    { key: 'reaction', label: 'Reaction' },
-  ],
-  medications: [
-    { key: 'medication_name', label: 'Medication' },
-    { key: 'dose', label: 'Dose' },
-    { key: 'frequency', label: 'Frequency' },
-  ],
-  family_history: [
-    { key: 'condition_name', label: 'Condition' },
-    { key: 'present', label: 'Present', type: 'checkbox' },
-    { key: 'notes', label: 'Notes' },
-  ],
-};
-
-const oneTableConfigs: Record<string, FieldConfig[]> = {
-  pharmacies: [
-    { key: 'name', label: 'Pharmacy Name' },
-    { key: 'address', label: 'Address' },
-    { key: 'zip', label: 'ZIP' },
-  ],
-  medical_history: [
-    { key: 'gestational_age', label: 'Gestational Age' },
-    { key: 'birth_weight', label: 'Birth Weight' },
-    { key: 'birth_complications', label: 'Birth Complications' },
-    { key: 'hospitalizations', label: 'Hospitalizations' },
-    { key: 'surgeries', label: 'Surgeries' },
-  ],
-  concerns: [
-    { key: 'visit_reason', label: 'Visit Reason' },
-    { key: 'development_concerns', label: 'Development Concerns' },
-  ],
-  immunizations: [{ key: 'status', label: 'Immunization Status' }],
-  social_history: [
-    { key: 'household_adults', label: 'Adults in Household', type: 'number' },
-    { key: 'household_children', label: 'Children in Household', type: 'number' },
-    { key: 'smokers_in_home', label: 'Smokers in Home', type: 'checkbox' },
-    { key: 'pets', label: 'Pets' },
-    { key: 'daycare_school', label: 'Daycare/School' },
-    { key: 'nutrition', label: 'Nutrition' },
-  ],
-  provider_preferences: [
-    { key: 'physician_preference', label: 'Physician Preference' },
-    { key: 'referral_source', label: 'Referral Source' },
-    { key: 'referring_provider', label: 'Referring Provider' },
-  ],
-  consents_signatures: [
-    { key: 'agreed', label: 'Agreed', type: 'checkbox' },
-    { key: 'typed_name', label: 'Typed Name' },
-    { key: 'signature_data', label: 'Signature Data' },
-    { key: 'signed_at', label: 'Signed At', type: 'date' },
-  ],
-};
-
-const defaultRows: Record<string, Record<string, any>> = {
-  guardians: { guardian_index: 1, full_name: '', relationship: '', phone: '', email: '', address: '', employer: '', ssn_last4: '' },
-  insurance_policies: { policy_order: 1, company: '', subscriber_name: '', subscriber_dob: '', group_number: '', member_id: '' },
-  allergies: { allergy_type: '', allergy_name: '', reaction: '' },
-  medications: { medication_name: '', dose: '', frequency: '' },
-  family_history: { condition_name: '', present: false, notes: '' },
-};
-
-function normalizeTableRows(value: any, table: string): any[] {
-  if (!Array.isArray(value)) return [];
-  const fields = rowTableConfigs[table] ?? [];
-  return value.map((row) => {
-    const normalized: Record<string, any> = {};
-    for (const field of fields) {
-      const raw = row?.[field.key];
-      if (field.type === 'checkbox') {
-        normalized[field.key] = Boolean(raw === true || raw === 1 || raw === '1');
-      } else {
-        normalized[field.key] = raw ?? '';
-      }
-    }
-    return normalized;
-  });
-}
-
-function normalizeOneTable(value: any, table: string): Record<string, any> {
-  const fields = oneTableConfigs[table] ?? [];
-  const raw = value ?? {};
-  const normalized: Record<string, any> = {};
-  for (const field of fields) {
-    const input = raw[field.key];
-    if (field.type === 'checkbox') {
-      normalized[field.key] = Boolean(input === true || input === 1 || input === '1');
-    } else {
-      normalized[field.key] = input ?? '';
-    }
-  }
-  return normalized;
-}
 
 function parseDownloadFilename(contentDisposition: string | null): string {
   if (!contentDisposition) return 'patientregistration.pdf';
@@ -213,22 +92,12 @@ export function StaffPatientDetailPage({ token }: Props) {
 
   const [detail, setDetail] = useState<any>(null);
   const [error, setError] = useState('');
-  const [savingTable, setSavingTable] = useState('');
   const [exportedJson, setExportedJson] = useState<Record<string, unknown> | null>(null);
 
-  const [rowData, setRowData] = useState<Record<string, any[]>>({});
-  const [oneData, setOneData] = useState<Record<string, Record<string, any>>>({});
   const [submissionResponses, setSubmissionResponses] = useState<Record<string, SubmissionResponsesPayload>>({});
   const [responseDrafts, setResponseDrafts] = useState<Record<string, Record<string, unknown>>>({});
   const [loadingResponsesFor, setLoadingResponsesFor] = useState('');
   const [savingResponsesFor, setSavingResponsesFor] = useState('');
-
-  // Patient files shared with family portal
-  const [documents, setDocuments] = useState<Array<{ id: string; original_filename: string; document_type: string; uploaded_at: string; uploaded_by_email: string }>>([]);
-  const [patientFile, setPatientFile] = useState<File | null>(null);
-  const [patientFileType, setPatientFileType] = useState('other');
-  const [patientFileUploading, setPatientFileUploading] = useState(false);
-  const [patientFileMsg, setPatientFileMsg] = useState('');
 
   // Form assignment state
   const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);
@@ -249,43 +118,92 @@ export function StaffPatientDetailPage({ token }: Props) {
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoAssignMsg, setAutoAssignMsg] = useState('');
 
+  // Patient files state
+  type PatientDoc = {
+    id: string; document_type: string; original_filename: string;
+    uploaded_at: string; uploaded_by_email: string;
+  };
+  const [documents, setDocuments] = useState<PatientDoc[]>([]);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadType, setUploadType] = useState('other');
+  const [uploading, setUploading] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+
   async function loadDocuments() {
-    if (!token || !id) return;
+    if (!token) return;
     try {
-      const result = await api<{ documents: Array<{ id: string; original_filename: string; document_type: string; uploaded_at: string; uploaded_by_email: string }> }>(
-        `/api/staff/documents?patient_id=${id}`,
-        { headers: authHeader(token) },
-      );
-      setDocuments(result.documents ?? []);
+      const result = await api<PatientDoc[]>(`/api/staff/documents?patient_id=${id}`, {
+        headers: authHeader(token),
+      });
+      setDocuments(result);
     } catch {
       // non-fatal
     }
   }
 
-  async function uploadPatientFile() {
-    if (!token || !id || !patientFile) return;
-    setPatientFileUploading(true);
-    setPatientFileMsg('');
+  async function handleUploadDocument(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token || !uploadFile) return;
+    setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', patientFile);
-      formData.append('document_type', patientFileType);
-      const resp = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000'}/api/staff/documents/patients/${id}/upload`, {
+      const form = new FormData();
+      form.append('file', uploadFile);
+      form.append('patient_id', id);
+      form.append('document_type', uploadType);
+      await fetch(`${API_BASE}/api/staff/documents`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        headers: authHeader(token),
+        body: form,
+      }).then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error((j as any)?.error?.message ?? 'Upload failed');
+        }
       });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error((err as any).error?.message ?? 'Upload failed');
-      }
-      setPatientFileMsg('File uploaded successfully. The family can view it after patient sign-in.');
-      setPatientFile(null);
+      setUploadFile(null);
+      setUploadType('other');
+      setFileInputKey((k) => k + 1);
       await loadDocuments();
     } catch (e) {
-      setPatientFileMsg((e as Error).message);
+      setError((e as Error).message);
     } finally {
-      setPatientFileUploading(false);
+      setUploading(false);
+    }
+  }
+
+  async function handleDownloadDocument(docId: string, filename: string) {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/staff/documents/${docId}/download`, {
+        headers: authHeader(token),
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function handleDeleteDocument(docId: string) {
+    if (!token) return;
+    if (!window.confirm('Delete this file? This cannot be undone.')) return;
+    setDeletingDocId(docId);
+    try {
+      await api(`/api/staff/documents/${docId}`, { method: 'DELETE', headers: authHeader(token) });
+      await loadDocuments();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeletingDocId(null);
     }
   }
 
@@ -467,18 +385,6 @@ export function StaffPatientDetailPage({ token }: Props) {
         headers: authHeader(token),
       });
       setDetail(response);
-
-      const rows: Record<string, any[]> = {};
-      Object.keys(rowTableConfigs).forEach((table) => {
-        rows[table] = normalizeTableRows(response[table], table);
-      });
-      setRowData(rows);
-
-      const ones: Record<string, Record<string, any>> = {};
-      Object.keys(oneTableConfigs).forEach((table) => {
-        ones[table] = normalizeOneTable(response[table], table);
-      });
-      setOneData(ones);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -497,121 +403,7 @@ export function StaffPatientDetailPage({ token }: Props) {
   }, [token, id]);
 
   const core = detail?.patient ?? {};
-  const submissions = detail?.submissions ?? [];
-
-  const corePayload = useMemo(
-    () => ({
-      child_first_name: core.child_first_name ?? '',
-      child_last_name: core.child_last_name ?? '',
-      child_dob: core.child_dob ?? '',
-      visit_type: core.visit_type ?? '',
-      preferred_language: core.preferred_language ?? '',
-      sex: core.sex ?? '',
-      race_ethnicity: core.race_ethnicity ?? '',
-    }),
-    [core],
-  );
-
-  const [coreForm, setCoreForm] = useState(corePayload);
-  useEffect(() => setCoreForm(corePayload), [corePayload]);
-
-  async function saveCore() {
-    if (!token) return;
-    setSavingTable('core');
-    try {
-      await api(`/api/staff/patients/${id}/core`, {
-        method: 'PATCH',
-        headers: authHeader(token),
-        body: JSON.stringify(coreForm),
-      });
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSavingTable('');
-    }
-  }
-
-  async function saveRowTable(table: string) {
-    if (!token) return;
-    setSavingTable(table);
-    try {
-      const cleaned = (rowData[table] ?? []).map((row) => {
-        const mapped: Record<string, any> = { ...row };
-        for (const field of rowTableConfigs[table]) {
-          if (field.type === 'checkbox') {
-            mapped[field.key] = row[field.key] ? 1 : 0;
-          }
-        }
-        return mapped;
-      });
-
-      await api(`/api/staff/patients/${id}/table/${table}`, {
-        method: 'PUT',
-        headers: authHeader(token),
-        body: JSON.stringify({ rows: cleaned }),
-      });
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSavingTable('');
-    }
-  }
-
-  async function saveOneTable(table: string) {
-    if (!token) return;
-    setSavingTable(table);
-    try {
-      const payload = { ...(oneData[table] ?? {}) };
-      for (const field of oneTableConfigs[table]) {
-        if (field.type === 'checkbox') {
-          payload[field.key] = payload[field.key] ? 1 : 0;
-        }
-      }
-
-      await api(`/api/staff/patients/${id}/table/${table}`, {
-        method: 'PUT',
-        headers: authHeader(token),
-        body: JSON.stringify({ data: payload }),
-      });
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSavingTable('');
-    }
-  }
-
-  function addRow(table: string) {
-    setRowData((prev) => ({
-      ...prev,
-      [table]: [...(prev[table] ?? []), { ...(defaultRows[table] ?? {}) }],
-    }));
-  }
-
-  function removeRow(table: string, index: number) {
-    setRowData((prev) => ({
-      ...prev,
-      [table]: (prev[table] ?? []).filter((_, idx) => idx !== index),
-    }));
-  }
-
-  function updateRowCell(table: string, rowIndex: number, key: string, value: any) {
-    setRowData((prev) => {
-      const rows = [...(prev[table] ?? [])];
-      rows[rowIndex] = { ...(rows[rowIndex] ?? {}), [key]: value };
-      return { ...prev, [table]: rows };
-    });
-  }
-
-  function updateOneCell(table: string, key: string, value: any) {
-    setOneData((prev) => ({
-      ...prev,
-      [table]: { ...(prev[table] ?? {}), [key]: value },
-    }));
-  }
-
+  const submissions = detail?.submissions ?? []; 
   async function exportSubmissionJson(submissionId: string) {
     if (!token) return;
     try {
@@ -767,43 +559,6 @@ export function StaffPatientDetailPage({ token }: Props) {
           Patient: {core.child_first_name} {core.child_last_name}
         </h2>
         {error ? <div className="error">{error}</div> : null}
-
-        <h3>Core Patient Record</h3>
-        <div className="row">
-          <div className="field">
-            <label>First Name</label>
-            <input value={coreForm.child_first_name} onChange={(e) => setCoreForm((p) => ({ ...p, child_first_name: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>Last Name</label>
-            <input value={coreForm.child_last_name} onChange={(e) => setCoreForm((p) => ({ ...p, child_last_name: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>Date of birth</label>
-            <input type="date" value={coreForm.child_dob} onChange={(e) => setCoreForm((p) => ({ ...p, child_dob: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>Visit Type</label>
-            <input value={coreForm.visit_type} onChange={(e) => setCoreForm((p) => ({ ...p, visit_type: e.target.value }))} />
-          </div>
-        </div>
-        <div className="row">
-          <div className="field">
-            <label>Preferred Language</label>
-            <input value={coreForm.preferred_language} onChange={(e) => setCoreForm((p) => ({ ...p, preferred_language: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>Sex</label>
-            <input value={coreForm.sex} onChange={(e) => setCoreForm((p) => ({ ...p, sex: e.target.value }))} />
-          </div>
-          <div className="field">
-            <label>Race/Ethnicity</label>
-            <input value={coreForm.race_ethnicity} onChange={(e) => setCoreForm((p) => ({ ...p, race_ethnicity: e.target.value }))} />
-          </div>
-        </div>
-        <button onClick={saveCore} disabled={savingTable === 'core'}>
-          {savingTable === 'core' ? 'Saving...' : 'Save Core'}
-        </button>
 
         {/* ── Patient Portal Link Panel ── */}
         <div className="card" style={{ background: '#f0f7ff', marginBottom: 12, marginTop: 8 }}>
@@ -1080,140 +835,48 @@ export function StaffPatientDetailPage({ token }: Props) {
           )}
         </div>
 
-        <h3 style={{ marginTop: 24 }}>Editable Sections</h3>
+        {/* ── Patient files ── */}
+        <div className="card card-subtle" style={{ marginBottom: 20, marginTop: 8 }}>
+          <h3 style={{ margin: '0 0 4px' }}>Patient files</h3>
+          <p className="text-muted" style={{ margin: '0 0 16px', fontSize: 13 }}>
+            Send files to the patient&apos;s family portal — vaccine records, lab reports, referrals, insurance cards,
+            visit summaries, consent forms, and other PDFs or images.
+          </p>
 
-        {Object.entries(rowTableConfigs).map(([table, fields]) => (
-          <div key={table} className="card" style={{ marginBottom: 12 }}>
-            <h4>{table}</h4>
-            {(rowData[table] ?? []).map((row, rowIndex) => (
-              <div key={`${table}-${rowIndex}`} className="card" style={{ marginBottom: 8, background: '#f9fbff' }}>
-                <div className="row">
-                  {fields.map((field) => (
-                    <div key={`${table}-${rowIndex}-${field.key}`} className="field">
-                      <label>{field.label}</label>
-                      {field.type === 'checkbox' ? (
-                        <input
-                          type="checkbox"
-                          checked={Boolean(row[field.key])}
-                          onChange={(e) => updateRowCell(table, rowIndex, field.key, e.target.checked)}
-                          style={{ width: 22, height: 22 }}
-                        />
-                      ) : (
-                        <input
-                          type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
-                          value={row[field.key] ?? ''}
-                          onChange={(e) => {
-                            const value = field.type === 'number' ? Number(e.target.value) : e.target.value;
-                            updateRowCell(table, rowIndex, field.key, value);
-                          }}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <button className="secondary" onClick={() => removeRow(table, rowIndex)}>
-                  Remove Row
-                </button>
-              </div>
-            ))}
-
-            <div className="actions">
-              <button className="secondary" onClick={() => addRow(table)}>
-                Add Row
-              </button>
-              <button onClick={() => saveRowTable(table)} disabled={savingTable === table}>
-                {savingTable === table ? 'Saving...' : `Save ${table}`}
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {Object.entries(oneTableConfigs).map(([table, fields]) => (
-          <div key={table} className="card" style={{ marginBottom: 12 }}>
-            <h4>{table}</h4>
-            <div className="row">
-              {fields.map((field) => (
-                <div key={`${table}-${field.key}`} className="field">
-                  <label>{field.label}</label>
-                  {field.type === 'checkbox' ? (
-                    <input
-                      type="checkbox"
-                      checked={Boolean(oneData[table]?.[field.key])}
-                      onChange={(e) => updateOneCell(table, field.key, e.target.checked)}
-                      style={{ width: 22, height: 22 }}
-                    />
-                  ) : (
-                    <input
-                      type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
-                      value={oneData[table]?.[field.key] ?? ''}
-                      onChange={(e) => {
-                        const value = field.type === 'number' ? Number(e.target.value) : e.target.value;
-                        updateOneCell(table, field.key, value);
-                      }}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-            <button onClick={() => saveOneTable(table)} disabled={savingTable === table}>
-              {savingTable === table ? 'Saving...' : `Save ${table}`}
-            </button>
-          </div>
-        ))}
-
-        <h3 style={{ marginTop: 24 }}>Patient files</h3>
-        <p style={{ color: '#555', fontSize: 14 }}>
-          Send files to the patient&apos;s family portal — vaccine records, lab reports, referrals, insurance cards,
-          visit summaries, consent forms, and other PDFs or images.
-        </p>
-        <div className="card card-subtle" style={{ marginBottom: 12 }}>
-          <div className="row" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
-            <div className="field" style={{ flex: '1 1 200px' }}>
+          <form onSubmit={handleUploadDocument} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}>
+            <div className="field" style={{ margin: 0 }}>
               <label>File type</label>
-              <select value={patientFileType} onChange={(e) => setPatientFileType(e.target.value)}>
-                {PATIENT_DOCUMENT_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
+              <select value={uploadType} onChange={(e) => setUploadType(e.target.value)} style={{ width: 180 }}>
+                {PATIENT_DOCUMENT_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
-            <div className="field" style={{ flex: '2 1 260px' }}>
-              <label>File (PDF, image, Word, or text)</label>
+            <div className="field" style={{ margin: 0 }}>
+              <label>File (PDF or image)</label>
               <input
+                key={fileInputKey}
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.gif,.tiff,.webp,.doc,.docx,.txt"
-                onChange={(e) => setPatientFile(e.target.files?.[0] ?? null)}
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                required
               />
             </div>
-            <button
-              type="button"
-              onClick={uploadPatientFile}
-              disabled={patientFileUploading || !patientFile}
-              style={{ marginBottom: 4 }}
-            >
-              {patientFileUploading ? 'Uploading…' : 'Upload file'}
+            <button type="submit" disabled={uploading || !uploadFile} style={{ whiteSpace: 'nowrap' }}>
+              {uploading ? 'Uploading…' : 'Upload'}
             </button>
-          </div>
-          {patientFileMsg && (
-            <div
-              style={{
-                marginTop: 8,
-                color: patientFileMsg.toLowerCase().includes('success') ? '#155724' : '#721c24',
-                fontSize: 13,
-              }}
-            >
-              {patientFileMsg}
-            </div>
-          )}
-          {documents.length > 0 ? (
-            <table className="table" style={{ marginTop: 12 }}>
+          </form>
+
+          {documents.length === 0 ? (
+            <p style={{ color: '#888', fontSize: 13 }}>No files uploaded yet.</p>
+          ) : (
+            <table className="table">
               <thead>
                 <tr>
-                  <th>File name</th>
+                  <th>File</th>
                   <th>Type</th>
                   <th>Uploaded</th>
-                  <th>Uploaded by</th>
+                  <th>By</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -1222,24 +885,29 @@ export function StaffPatientDetailPage({ token }: Props) {
                   <tr key={doc.id}>
                     <td>{doc.original_filename}</td>
                     <td>{patientDocumentTypeLabel(doc.document_type)}</td>
-                    <td>{new Date(doc.uploaded_at).toLocaleString()}</td>
-                    <td>{doc.uploaded_by_email}</td>
-                    <td>
-                      <a
-                        href={`${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000'}/api/staff/documents/${doc.id}/download`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ fontSize: 12 }}
+                    <td>{new Date(doc.uploaded_at).toLocaleDateString()}</td>
+                    <td style={{ fontSize: 12 }}>{doc.uploaded_by_email}</td>
+                    <td style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="secondary"
+                        style={{ fontSize: 12, padding: '2px 8px' }}
+                        onClick={() => handleDownloadDocument(doc.id, doc.original_filename)}
                       >
                         Download
-                      </a>
+                      </button>
+                      <button
+                        className="secondary"
+                        style={{ fontSize: 12, padding: '2px 8px', color: '#c00', borderColor: '#c00' }}
+                        onClick={() => handleDeleteDocument(doc.id)}
+                        disabled={deletingDocId === doc.id}
+                      >
+                        {deletingDocId === doc.id ? 'Deleting…' : 'Delete'}
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : (
-            <p style={{ color: '#888', fontSize: 13, marginTop: 8 }}>No documents uploaded yet.</p>
           )}
         </div>
 

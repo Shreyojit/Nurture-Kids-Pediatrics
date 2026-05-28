@@ -91,6 +91,14 @@ export function App() {
       <Routes>
         <Route path="/" element={rootRedirect} />
 
+        {/* Patient login/dashboard — accessible in all modes */}
+        <Route path="/parent/login" element={<ParentLoginPage onPatientSession={onPatientSession} />} />
+        <Route
+          path="/parent/dashboard"
+          element={<PatientFamilyDashboard onSessionChange={setPatientSession} />}
+        />
+        <Route path="/parent/forms" element={<Navigate to="/parent/dashboard" replace />} />
+
         {!isAdminOnly && (
           <>
             <Route path="/p/:slug/forms" element={<Navigate to="/parent/login" replace />} />
@@ -101,12 +109,6 @@ export function App() {
             <Route path="/p/:slug/session/:sessionId/form/:formId/step/:step" element={<ParentFormPage />} />
             <Route path="/p/:slug/session/:sessionId/pdf-form" element={<PdfFillPage />} />
             <Route path="/p/:slug/session/:sessionId/confirmation" element={<ParentConfirmationPage />} />
-            <Route path="/parent/login" element={<ParentLoginPage onPatientSession={onPatientSession} />} />
-            <Route
-              path="/parent/dashboard"
-              element={<PatientFamilyDashboard onSessionChange={setPatientSession} />}
-            />
-            <Route path="/parent/forms" element={<Navigate to="/parent/dashboard" replace />} />
           </>
         )}
 

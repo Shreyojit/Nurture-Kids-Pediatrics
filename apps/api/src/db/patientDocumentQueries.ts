@@ -104,6 +104,10 @@ export function resolveDocumentPath(doc: PatientDocumentRow): string {
   return resolveDataPath(doc.stored_path);
 }
 
+export function deletePatientDocument(id: string, practiceId: string): void {
+  db.prepare('delete from patient_documents where id = ? and practice_id = ?').run(id, practiceId);
+}
+
 /** Patient download: document must belong to a patient record matching name + DOB. */
 export function getDocumentForIdentityDownload(
   documentId: string,
