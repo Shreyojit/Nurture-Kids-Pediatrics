@@ -5,6 +5,8 @@ export type PatientPortalForm = {
   session_id: string | null;
   practice_slug: string;
   practice_name: string;
+  /** Branch/clinic that assigned this form, if known */
+  location_name?: string | null;
   template_id: string;
   status: string;
 };
@@ -15,6 +17,8 @@ export type PatientPortalDocument = {
   original_filename: string;
   uploaded_at: string;
   practice_name: string;
+  /** Branch/clinic that uploaded this file, if known */
+  location_name?: string | null;
 };
 
 export type PatientPortalAccess = {

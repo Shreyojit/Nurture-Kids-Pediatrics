@@ -47,3 +47,5 @@ Thumbs.db
 *.png
 .jpg
 .playwright-mcp
+
+apps/data/patient-documents/

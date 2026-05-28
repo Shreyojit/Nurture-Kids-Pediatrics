@@ -100,6 +100,7 @@ function buildAccessPayloadForPatients(
           original_filename: d.original_filename,
           uploaded_at: d.uploaded_at,
           practice_name: d.practice_name,
+          location_name: d.location_name ?? null,
         }))
       : [];
 

@@ -34,7 +34,6 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
   }
 
   if (patientSession && isPatientPortal && !isAdminOnly) {
-    const tab = new URLSearchParams(location.search).get('tab');
     return (
       <div className="portal-nav">
         <div
@@ -56,23 +55,9 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
             <Link
               to="/parent/dashboard"
-              style={{
-                color: tab !== 'downloads' ? '#fff' : 'rgba(255,255,255,0.75)',
-                fontWeight: tab !== 'downloads' ? 700 : 400,
-                marginLeft: 0,
-              }}
+              style={{ color: '#fff', fontWeight: 700, marginLeft: 0 }}
             >
-              My forms
-            </Link>
-            <Link
-              to="/parent/dashboard?tab=downloads"
-              style={{
-                color: tab === 'downloads' ? '#fff' : 'rgba(255,255,255,0.75)',
-                fontWeight: tab === 'downloads' ? 700 : 400,
-                marginLeft: 0,
-              }}
-            >
-              Patient files
+              My dashboard
             </Link>
             <a
               href="#logout"

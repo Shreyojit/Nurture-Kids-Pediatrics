@@ -14,6 +14,7 @@ export type PortalFormItem = {
   session_id: string | null;
   practice_slug: string;
   practice_name: string;
+  location_name: string | null;
   template_id: string;
   status: string;
 };
@@ -24,6 +25,7 @@ export type PortalDocumentItem = {
   original_filename: string;
   uploaded_at: string;
   practice_name: string;
+  location_name: string | null;
 };
 
 export function buildPortalFormsForPatient(
@@ -50,6 +52,7 @@ export function buildPortalFormsForPatient(
             session_id: existing.id,
             practice_slug: practiceSlug,
             practice_name: practiceName,
+            location_name: assignment.location_name ?? null,
             template_id: assignment.template_id,
             status: existing.status,
           };
@@ -104,6 +107,7 @@ export function buildPortalFormsForPatient(
         session_id: submission.id,
         practice_slug: practiceSlug,
         practice_name: practiceName,
+        location_name: assignment.location_name ?? null,
         template_id: String(template.id),
         status: 'in_progress' as const,
       };
@@ -119,6 +123,7 @@ export function buildPortalFormsForPatient(
       session_id: a.submission_id,
       practice_slug: practiceSlug,
       practice_name: practiceName,
+      location_name: a.location_name ?? null,
       template_id: a.template_id,
       status: 'completed' as const,
     }));
@@ -136,6 +141,7 @@ export function buildPortalDocumentsForPatient(
     original_filename: d.original_filename,
     uploaded_at: d.uploaded_at,
     practice_name: d.practice_name,
+    location_name: d.location_name ?? null,
   }));
 }
 

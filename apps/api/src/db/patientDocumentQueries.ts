@@ -49,17 +49,19 @@ export function getPatientDocumentById(id: string, practiceId: string): PatientD
 export function listDocumentsForPatient(
   patientId: string,
   practiceId: string,
-): Array<PatientDocumentRow & { practice_name: string; uploaded_by_email: string }> {
+): Array<PatientDocumentRow & { practice_name: string; location_name: string | null; uploaded_by_email: string }> {
   return db
     .prepare(
-      `select d.*, pr.name as practice_name, s.email as uploaded_by_email
+      `select d.*, pr.name as practice_name, s.email as uploaded_by_email,
+              loc.location_name as location_name
        from patient_documents d
        join practices pr on pr.id = d.practice_id
        join staff_users s on s.id = d.uploaded_by
+       left join practices loc on loc.id = s.location_id
        where d.patient_id = ? and d.practice_id = ?
        order by d.uploaded_at desc`,
     )
-    .all(patientId, practiceId) as Array<PatientDocumentRow & { practice_name: string; uploaded_by_email: string }>;
+    .all(patientId, practiceId) as Array<PatientDocumentRow & { practice_name: string; location_name: string | null; uploaded_by_email: string }>;
 }
 
 export function listDocumentsForStaff(
@@ -132,21 +134,23 @@ export function listDocumentsForIdentity(
   firstName: string,
   lastName: string,
   dob: string,
-): Array<PatientDocumentRow & { practice_name: string; uploaded_by_email: string }> {
+): Array<PatientDocumentRow & { practice_name: string; location_name: string | null; uploaded_by_email: string }> {
   const dobNorm = String(dob).trim().slice(0, 10);
   return db
     .prepare(
-      `select d.*, pr.name as practice_name, s.email as uploaded_by_email
+      `select d.*, pr.name as practice_name, s.email as uploaded_by_email,
+              loc.location_name as location_name
        from patient_documents d
        join patients p on p.id = d.patient_id and p.practice_id = d.practice_id
        join practices pr on pr.id = d.practice_id
        join staff_users s on s.id = d.uploaded_by
+       left join practices loc on loc.id = s.location_id
        where lower(trim(p.child_first_name)) = lower(trim(?))
          and lower(trim(p.child_last_name)) = lower(trim(?))
          and p.child_dob = ?
        order by d.uploaded_at desc`,
     )
     .all(firstName.trim(), lastName.trim(), dobNorm) as Array<
-    PatientDocumentRow & { practice_name: string; uploaded_by_email: string }
+    PatientDocumentRow & { practice_name: string; location_name: string | null; uploaded_by_email: string }
   >;
 }

@@ -1,9 +1,9 @@
 /**
- * Patient dashboard after name + DOB sign-in.
- * Header tabs: Downloads | My forms (with progress bar and appointment).
+ * Patient dashboard — forms and files on one screen, no tabs.
+ * Each form/file shows: Org Name › Branch Name (when a branch is known).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
   clearPatientSession,
@@ -14,9 +14,8 @@ import {
   type PatientSession,
 } from '../lib/patientSession';
 import { patientDocumentTypeLabel } from '../lib/patientDocumentTypes';
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
-type Tab = 'forms' | 'downloads';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
 function formDescription(templateName: string, templateKey?: string): string {
   const key = (templateKey ?? templateName).toLowerCase();
@@ -41,6 +40,20 @@ function formatAppointmentLabel(date: string | null, time: string | null): strin
   if (!time?.trim()) return day;
   const timeLabel = parsed.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   return `${day} at ${timeLabel}`;
+}
+
+/** Renders "Org Name" or "Org Name › Branch" */
+function PracticeTag({ name, location }: { name: string; location?: string | null }) {
+  if (location?.trim()) {
+    return (
+      <p className="patient-portal-practice-tag" style={{ margin: '2px 0 0' }}>
+        {name}
+        <span style={{ margin: '0 4px', opacity: 0.5 }}>›</span>
+        <span>{location}</span>
+      </p>
+    );
+  }
+  return <p className="patient-portal-practice-tag" style={{ margin: '2px 0 0' }}>{name}</p>;
 }
 
 function normalizeAccess(raw: Record<string, unknown>): PatientPortalAccess {
@@ -79,9 +92,6 @@ type Props = {
 
 export function PatientFamilyDashboard({ onSessionChange }: Props) {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab');
-  const activeTab: Tab = tabParam === 'downloads' ? 'downloads' : 'forms';
 
   const [session, setSession] = useState<PatientSession | null>(() => getPatientSession());
   const [access, setAccess] = useState<PatientPortalAccess | null>(session?.access ?? null);
@@ -179,9 +189,13 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
       ? `${access.practice_names.length} practices`
       : access.practice_name ?? access.practice_names[0] ?? 'Your care team';
 
+  const completedForms = access.forms.filter((f) => f.status === 'completed');
+
   return (
     <div className="patient-portal-page">
       <div className="patient-portal-shell" style={{ width: 'min(640px, 100%)' }}>
+
+        {/* ── Identity card ── */}
         <div className="patient-portal-card" style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
             <div>
@@ -205,148 +219,147 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
           ) : null}
         </div>
 
-        {activeTab === 'forms' ? (
-          <div className="patient-portal-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ margin: 0, fontSize: 17 }}>Forms to complete</h2>
-              <button
-                type="button"
-                className="patient-portal-refresh"
-                onClick={() => refresh(session)}
-                disabled={refreshing}
-                style={{ position: 'static', margin: 0 }}
-              >
-                {refreshing ? 'Updating…' : 'Refresh'}
-              </button>
-            </div>
+        {/* ── Forms card ── */}
+        <div className="patient-portal-card" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 17 }}>Forms to complete</h2>
+            <button
+              type="button"
+              className="patient-portal-refresh"
+              onClick={() => refresh(session)}
+              disabled={refreshing}
+              style={{ position: 'static', margin: 0 }}
+            >
+              {refreshing ? 'Updating…' : 'Refresh'}
+            </button>
+          </div>
 
-            {formStats.total > 0 ? (
-              <div className="patient-portal-progress" style={{ marginBottom: 20 }}>
-                <div className="patient-portal-progress-meta">
-                  <span>
-                    {formStats.done} of {formStats.total} {formStats.total === 1 ? 'form' : 'forms'} done
-                  </span>
-                  <span>{formStats.pct}%</span>
-                </div>
-                <div className="patient-portal-progress-bar">
-                  <div className="patient-portal-progress-fill" style={{ width: `${formStats.pct}%` }} />
-                </div>
+          {formStats.total > 0 ? (
+            <div className="patient-portal-progress" style={{ marginBottom: 20 }}>
+              <div className="patient-portal-progress-meta">
+                <span>
+                  {formStats.done} of {formStats.total} {formStats.total === 1 ? 'form' : 'forms'} done
+                </span>
+                <span>{formStats.pct}%</span>
               </div>
-            ) : null}
+              <div className="patient-portal-progress-bar">
+                <div className="patient-portal-progress-fill" style={{ width: `${formStats.pct}%` }} />
+              </div>
+            </div>
+          ) : null}
 
-            {formStats.total === 0 ? (
-              <p style={{ color: '#666', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
-                No forms assigned yet. Check back later or contact your practice.
-              </p>
-            ) : (
-              <>
-                {formStats.todo.length > 0 ? (
-                  <>
-                    <p className="patient-portal-section-label">STILL TO DO</p>
-                    <div className="patient-portal-form-list">
-                      {formStats.todo.map((form) => (
-                        <div key={form.assignment_id} className="patient-portal-form-item">
-                          <div className="patient-portal-form-icon todo">📋</div>
-                          <div className="patient-portal-form-body">
-                            <p className="patient-portal-form-name">{form.template_name}</p>
-                            {form.practice_name ? (
-                              <p className="patient-portal-practice-tag">{form.practice_name}</p>
-                            ) : null}
-                            <p className="patient-portal-form-desc">
-                              {formDescription(form.template_name, form.template_key)}
-                            </p>
-                          </div>
-                          {form.session_id ? (
-                            <button type="button" className="patient-portal-start-btn" onClick={() => openForm(form)}>
-                              {form.status === 'in_progress' ? 'Continue' : 'Start'}
-                            </button>
+          {formStats.total === 0 ? (
+            <p style={{ color: '#666', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
+              No forms assigned yet. Check back later or contact your practice.
+            </p>
+          ) : (
+            <>
+              {formStats.todo.length > 0 ? (
+                <>
+                  <p className="patient-portal-section-label">STILL TO DO</p>
+                  <div className="patient-portal-form-list">
+                    {formStats.todo.map((form) => (
+                      <div key={form.assignment_id} className="patient-portal-form-item">
+                        <div className="patient-portal-form-icon todo">📋</div>
+                        <div className="patient-portal-form-body">
+                          <p className="patient-portal-form-name">{form.template_name}</p>
+                          {form.practice_name ? (
+                            <PracticeTag name={form.practice_name} location={form.location_name} />
                           ) : null}
+                          <p className="patient-portal-form-desc">
+                            {formDescription(form.template_name, form.template_key)}
+                          </p>
                         </div>
-                      ))}
-                    </div>
-                  </>
-                ) : null}
-
-                {formStats.done > 0 ? (
-                  <>
-                    <p className="patient-portal-section-label" style={{ marginTop: 16 }}>
-                      COMPLETED
-                    </p>
-                    <div className="patient-portal-form-list">
-                      {access.forms
-                        .filter((f) => f.status === 'completed')
-                        .map((form) => (
-                          <div key={form.assignment_id} className="patient-portal-form-item is-done">
-                            <div className="patient-portal-form-icon done">✓</div>
-                            <div className="patient-portal-form-body">
-                              <p className="patient-portal-form-name">{form.template_name}</p>
-                              {form.practice_name ? (
-                                <p className="patient-portal-practice-tag">{form.practice_name}</p>
-                              ) : null}
-                              <p className="patient-portal-form-desc">Submitted — thank you!</p>
-                            </div>
-                            <span className="patient-portal-done-label">Done</span>
-                          </div>
-                        ))}
-                    </div>
-                  </>
-                ) : null}
-              </>
-            )}
-
-            <p className="patient-portal-footer">
-              Completed forms are sent to the practice that assigned them. Please finish all forms before your visit.
-            </p>
-          </div>
-        ) : (
-          <div className="patient-portal-card">
-            <h2 style={{ margin: '0 0 8px', fontSize: 17 }}>Patient files</h2>
-            <p style={{ margin: '0 0 16px', fontSize: 14, color: '#555' }}>
-              Files shared with your family by your care team. Each file shows which practice uploaded it.
-            </p>
-
-            {access.documents.length === 0 ? (
-              <p style={{ color: '#888', fontSize: 14, textAlign: 'center', padding: '16px 0' }}>
-                No files available right now.
-              </p>
-            ) : (
-              access.documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 10,
-                    padding: '12px 0',
-                    borderTop: '1px solid #e8eef4',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{doc.original_filename}</div>
-                    <p className="patient-portal-practice-tag" style={{ marginTop: 4 }}>
-                      {doc.practice_name}
-                    </p>
-                    <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                      {patientDocumentTypeLabel(doc.document_type)}
-                      {' · '}Uploaded {new Date(doc.uploaded_at).toLocaleDateString()}
-                    </div>
+                        {form.session_id ? (
+                          <button type="button" className="patient-portal-start-btn" onClick={() => openForm(form)}>
+                            {form.status === 'in_progress' ? 'Continue' : 'Start'}
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ fontSize: 13 }}
-                    onClick={() => downloadDocument(doc.id, doc.original_filename)}
-                    disabled={downloadingId === doc.id}
-                  >
-                    {downloadingId === doc.id ? 'Downloading…' : 'Download'}
-                  </button>
+                </>
+              ) : null}
+
+              {completedForms.length > 0 ? (
+                <>
+                  <p className="patient-portal-section-label" style={{ marginTop: 16 }}>
+                    COMPLETED
+                  </p>
+                  <div className="patient-portal-form-list">
+                    {completedForms.map((form) => (
+                      <div key={form.assignment_id} className="patient-portal-form-item is-done">
+                        <div className="patient-portal-form-icon done">✓</div>
+                        <div className="patient-portal-form-body">
+                          <p className="patient-portal-form-name">{form.template_name}</p>
+                          {form.practice_name ? (
+                            <PracticeTag name={form.practice_name} location={form.location_name} />
+                          ) : null}
+                          <p className="patient-portal-form-desc">Submitted — thank you!</p>
+                        </div>
+                        <span className="patient-portal-done-label">Done</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </>
+          )}
+
+          <p className="patient-portal-footer">
+            Completed forms are sent to the practice that assigned them. Please finish all forms before your visit.
+          </p>
+        </div>
+
+        {/* ── Patient files card ── */}
+        <div className="patient-portal-card">
+          <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>Patient files</h2>
+          <p style={{ margin: '0 0 16px', fontSize: 14, color: '#555' }}>
+            Files shared with your family by your care team.
+          </p>
+
+          {access.documents.length === 0 ? (
+            <p style={{ color: '#888', fontSize: 14, textAlign: 'center', padding: '16px 0' }}>
+              No files available right now.
+            </p>
+          ) : (
+            access.documents.map((doc) => (
+              <div
+                key={doc.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  padding: '12px 0',
+                  borderTop: '1px solid #e8eef4',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{doc.original_filename}</div>
+                  {doc.practice_name ? (
+                    <PracticeTag name={doc.practice_name} location={doc.location_name} />
+                  ) : null}
+                  <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                    {patientDocumentTypeLabel(doc.document_type)}
+                    {' · '}Uploaded {new Date(doc.uploaded_at).toLocaleDateString()}
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-        )}
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ fontSize: 13 }}
+                  onClick={() => downloadDocument(doc.id, doc.original_filename)}
+                  disabled={downloadingId === doc.id}
+                >
+                  {downloadingId === doc.id ? 'Downloading…' : 'Download'}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
       </div>
     </div>
   );

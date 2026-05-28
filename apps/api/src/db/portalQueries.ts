@@ -94,13 +94,17 @@ export function getPortalAssignmentsForPatient(
   status: string;
   submission_id: string | null;
   expires_at: string;
+  location_name: string | null;
 }> {
   return db
     .prepare(
       `select fa.id, fa.template_id, fa.status, fa.submission_id, fa.expires_at,
-              t.name as template_name, t.template_key
+              t.name as template_name, t.template_key,
+              loc.location_name as location_name
        from form_assignments fa
        join pdf_templates t on t.id = fa.template_id
+       left join staff_users su on su.id = fa.assigned_by
+       left join practices loc on loc.id = su.location_id
        where fa.patient_id = ? and fa.practice_id = ?
          and (
            fa.status = 'completed'
@@ -119,5 +123,6 @@ export function getPortalAssignmentsForPatient(
     status: string;
     submission_id: string | null;
     expires_at: string;
+    location_name: string | null;
   }>;
 }
