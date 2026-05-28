@@ -326,7 +326,7 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
                           <button
                             type="button"
                             className="secondary"
-                            style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+                            style={{ fontSize: 13, whiteSpace: 'nowrap', width: 'auto', flexShrink: 0 }}
                             onClick={() => downloadSubmissionPdf(form.session_id!, form.template_name)}
                             disabled={downloadingId === form.session_id}
                           >
@@ -386,7 +386,7 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
                 <button
                   type="button"
                   className="secondary"
-                  style={{ fontSize: 13 }}
+                  style={{ fontSize: 13, width: 'auto', flexShrink: 0 }}
                   onClick={() => downloadDocument(doc.id, doc.original_filename)}
                   disabled={downloadingId === doc.id}
                 >
