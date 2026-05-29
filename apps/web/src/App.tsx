@@ -97,16 +97,19 @@ export function App() {
         />
         <Route path="/parent/forms" element={<Navigate to="/parent/dashboard" replace />} />
 
+        {/* Form-filling session routes — always accessible so patients can fill assigned forms
+            regardless of app mode (entry routes like /:practice/fill/:token are also always registered) */}
+        <Route path="/p/:slug/session/:sessionId/overview" element={<ParentOverviewPage />} />
+        <Route path="/p/:slug/session/:sessionId/form/:formId/step/:step" element={<ParentFormPage />} />
+        <Route path="/p/:slug/session/:sessionId/pdf-form" element={<PdfFillPage />} />
+        <Route path="/p/:slug/session/:sessionId/confirmation" element={<ParentConfirmationPage />} />
+
         {!isAdminOnly && (
           <>
             <Route path="/p/:slug/forms" element={<Navigate to="/parent/login" replace />} />
             <Route path="/parent/register" element={<ParentStartPage />} />
             <Route path="/p/:slug/register" element={<ParentStartPage />} />
             <Route path="/p/:slug" element={<RedirectToPatientSignIn />} />
-            <Route path="/p/:slug/session/:sessionId/overview" element={<ParentOverviewPage />} />
-            <Route path="/p/:slug/session/:sessionId/form/:formId/step/:step" element={<ParentFormPage />} />
-            <Route path="/p/:slug/session/:sessionId/pdf-form" element={<PdfFillPage />} />
-            <Route path="/p/:slug/session/:sessionId/confirmation" element={<ParentConfirmationPage />} />
           </>
         )}
 
