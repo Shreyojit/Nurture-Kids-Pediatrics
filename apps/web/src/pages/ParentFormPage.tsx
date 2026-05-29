@@ -75,10 +75,23 @@ export function ParentFormPage() {
 
   const currentStep = useMemo(() => template?.steps[stepIndex] ?? null, [template, stepIndex]);
 
-  if (!template || !currentStep) {
+  if (!template) {
     return (
       <div className="card mobile">
         <p>Loading form...</p>
+      </div>
+    );
+  }
+
+  if (!currentStep) {
+    return (
+      <div className="card mobile">
+        <p style={{ color: '#c0392b' }}>
+          This form is not available for step-by-step filling. Please go back and try again.
+        </p>
+        <button onClick={() => navigate(-1)} style={{ marginTop: 12, background: '#6b7280' }}>
+          Go back
+        </button>
       </div>
     );
   }

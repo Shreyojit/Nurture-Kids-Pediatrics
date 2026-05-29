@@ -19,6 +19,7 @@
     "db:migrate": "tsx src/scripts/dbTools.ts migrate",
     "db:seed": "tsx src/scripts/dbTools.ts seed",
     "db:reset": "tsx src/scripts/dbTools.ts reset",
+    "sync:mchat": "tsx src/scripts/syncMchatFromProd.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -12,11 +12,10 @@ export function ParentOverviewPage() {
     api<FormTemplate>(`/api/submissions/${sessionId}/template`).then((t) => {
       const isMchat = t.form_id === 'mchat' || /^mchat/i.test(t.form_id ?? '');
       if (isMchat) {
-        if (t.pdf_overlay_ready && (t.field_schema?.fields?.length ?? 0) > 0) {
-          navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
-        } else {
-          navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
-        }
+        // Always route M-CHAT to the PDF page. PdfFillPage uses overlay mode when
+        // field_schema is ready; otherwise it shows a clear error. Falling back to
+        // the step form is wrong because M-CHAT templates have no regular steps.
+        navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
         return;
       }
       // Non-MCHAT: gate on form_id, not visit_type (commit 106f492)
