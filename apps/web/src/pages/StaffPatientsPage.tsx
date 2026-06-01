@@ -514,7 +514,8 @@ export function StaffPatientsPage({ token }: Props) {
           <table className="table">
             <thead>
               <tr>
-                <th>Patient name</th>
+                <th>First name</th>
+                <th>Last name</th>
                 <th>Chart #</th>
                 {(regionOptions.length > 1 || locationOptions.length > 1) && <th>Region / Clinic</th>}
                 <th>DOB</th>
@@ -529,7 +530,7 @@ export function StaffPatientsPage({ token }: Props) {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={(regionOptions.length > 1 || locationOptions.length > 1) ? 9 : 8}
+                    colSpan={(regionOptions.length > 1 || locationOptions.length > 1) ? 10 : 9}
                     style={{ textAlign: 'center', color: '#888', padding: '24px 0' }}
                   >
                     {patients.length === 0
@@ -540,11 +541,8 @@ export function StaffPatientsPage({ token }: Props) {
               )}
               {filtered.map((patient) => (
                 <tr key={patient.id}>
-                  <td>
-                    <strong>
-                      {patient.child_first_name} {patient.child_last_name}
-                    </strong>
-                  </td>
+                  <td style={{ fontWeight: 600 }}>{patient.child_first_name}</td>
+                  <td style={{ fontWeight: 600 }}>{patient.child_last_name}</td>
                   <td>{patient.patient_acct_no ?? '—'}</td>
                   {(regionOptions.length > 1 || locationOptions.length > 1) && (
                     <td>

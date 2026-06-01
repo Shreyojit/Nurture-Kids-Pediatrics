@@ -1082,26 +1082,99 @@ export function findPracticeByName(name: string): Record<string, unknown> | unde
     .get(trimmed) as Record<string, unknown> | undefined;
 }
 
-/** All patient records matching child name + DOB (may span multiple practices). */
+/** All patient records matching child name + DOB (may span multiple practices).
+ *
+ * Three-tier matching strategy (tried in order, returns on first hit):
+ *
+ * 1. Full-name concat match — any first/last split of the same full name works.
+ *    e.g. stored first="Marie-Isabela Lopez" last="Juarez"
+ *         entered first="Marie-Isabela"      last="Lopez Juarez"  ✓
+ *
+ * 2. Compound last-name suffix match — first must match exactly, stored last
+ *    name must end with the entered last name (space-bounded).
+ *    e.g. stored first="Sofia" last="O'Connor Rivera"
+ *         entered first="Sofia" last="Rivera"  ✓  ("O'Connor Rivera" ends with " Rivera")
+ *    Also works for first-name suffix:
+ *         stored first="Juan Carlos" last="Smith"
+ *         entered first="Juan"       last="Smith"  ✓  ("Juan Carlos" ends with is prefix "Juan")
+ *
+ * 3. Exact column match — safety net for single-word names or unusual formats.
+ */
 export function findPatientsByIdentity(input: {
   firstName: string;
   lastName: string;
   dob: string;
 }): Array<Record<string, unknown> & { practice_slug: string; practice_name: string }> {
   const dobNorm = String(input.dob).trim().slice(0, 10);
-  return db
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
+
+  type PatientRow = Record<string, unknown> & { practice_slug: string; practice_name: string };
+
+  const BASE = `select p.*, pr.slug as practice_slug, pr.name as practice_name
+                from patients p
+                join practices pr on pr.id = p.practice_id`;
+
+  // ── Step 1: full-name concat match ───────────────────────────────────────
+  // Normalise: collapse double-spaces that arise from the concat, then lowercase.
+  const enteredFull = `${firstName} ${lastName}`.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  const step1 = db
     .prepare(
-      `select p.*, pr.slug as practice_slug, pr.name as practice_name
-       from patients p
-       join practices pr on pr.id = p.practice_id
-       where lower(trim(p.child_first_name)) = lower(trim(?))
-         and lower(trim(p.child_last_name)) = lower(trim(?))
+      `${BASE}
+       where replace(lower(trim(p.child_first_name) || ' ' || trim(p.child_last_name)), '  ', ' ') = ?
          and p.child_dob = ?
        order by pr.name asc`,
     )
-    .all(input.firstName.trim(), input.lastName.trim(), dobNorm) as Array<
-    Record<string, unknown> & { practice_slug: string; practice_name: string }
-  >;
+    .all(enteredFull, dobNorm) as PatientRow[];
+
+  if (step1.length > 0) return step1;
+
+  // ── Step 2: compound-name suffix match ───────────────────────────────────
+  // Stored last ends with " <entered last>" (space prevents partial-word match).
+  // Also allows stored first to start with entered first (e.g. "Juan Carlos" → "Juan").
+  // Both sides are checked so family members can use any recognisable surname token.
+  const lastSuffix = `% ${lastName.toLowerCase()}`;  // e.g. "% rivera"
+  const firstSuffix = `% ${firstName.toLowerCase()}`; // e.g. "% carlos" not used here
+
+  const step2 = db
+    .prepare(
+      `${BASE}
+       where p.child_dob = ?
+         and (
+           -- entered last name matches end of stored last name (compound surname)
+           (lower(trim(p.child_first_name)) = lower(?)
+            and (lower(trim(p.child_last_name)) = lower(?)
+                 or lower(trim(p.child_last_name)) like ?))
+           or
+           -- entered first name matches start of stored first name (compound given name)
+           -- AND last names share a token
+           (lower(trim(p.child_last_name)) = lower(?)
+            and (lower(trim(p.child_first_name)) = lower(?)
+                 or lower(trim(p.child_first_name)) like lower(?) || ' %'))
+         )
+       order by pr.name asc`,
+    )
+    .all(
+      dobNorm,
+      // compound-last branch
+      firstName, lastName, lastSuffix,
+      // compound-first branch
+      lastName, firstName, firstName,
+    ) as PatientRow[];
+
+  if (step2.length > 0) return step2;
+
+  // ── Step 3: exact column match (safety net) ───────────────────────────────
+  return db
+    .prepare(
+      `${BASE}
+       where lower(trim(p.child_first_name)) = lower(?)
+         and lower(trim(p.child_last_name)) = lower(?)
+         and p.child_dob = ?
+       order by pr.name asc`,
+    )
+    .all(firstName, lastName, dobNorm) as PatientRow[];
 }
 
 /** Create a root organization (organization_id = NULL). */
