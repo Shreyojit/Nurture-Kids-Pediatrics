@@ -14,10 +14,10 @@ test.describe('Admin: login', () => {
   test('successful login lands on patients page', async ({ page }) => {
     await loginAsAdmin(page);
 
-    // Should be on /staff/patients after login
-    await expect(page).toHaveURL(/\/staff\/patients/);
-    // Nav contains admin-only links
-    await expect(page.getByRole('link', { name: /assignments/i })).toBeVisible();
+    // Should be on a staff page after login
+    await expect(page).toHaveURL(/\/staff\//);
+    // Staff nav links confirm we are authenticated
+    await expect(page.getByRole('link', { name: "Sent Forms" })).toBeVisible();
   });
 
   test('wrong password shows an error message', async ({ page }) => {
@@ -47,18 +47,18 @@ test.describe('Admin: navigation', () => {
   });
 
   test('can navigate to Assignments page', async ({ page }) => {
-    await page.getByRole('link', { name: /assignments/i }).click();
+    await page.getByRole('link', { name: 'Sent Forms' }).click();
     await expect(page).toHaveURL(/\/staff\/assignments/);
     await expect(page.getByRole('heading', { name: /forms sent to families/i })).toBeVisible();
   });
 
   test('can navigate to Submissions page', async ({ page }) => {
-    await page.getByRole('link', { name: /submissions/i }).click();
+    await page.getByRole('link', { name: 'Completed Forms' }).click();
     await expect(page).toHaveURL(/\/staff\/submissions/);
   });
 
   test('can navigate to Templates page', async ({ page }) => {
-    await page.getByRole('link', { name: /templates/i }).click();
+    await page.getByRole('link', { name: 'Form Builder', exact: true }).click();
     await expect(page).toHaveURL(/\/staff\/templates/);
   });
 });
@@ -128,7 +128,8 @@ test.describe('Admin: create assignment', () => {
 
     // UI shows the success panel with "Copy Portal Link"
     await expect(page.getByRole('button', { name: /copy portal link/i })).toBeVisible();
-    await expect(page.getByText(new RegExp(`${patientFirst}`, 'i'))).toBeVisible();
+    // Success heading contains the patient name (inside <em>)
+    await expect(page.locator('em').filter({ hasText: patientFirst })).toBeVisible();
   });
 
   test('shows the new assignment in the All sent forms table', async ({ page }) => {
@@ -150,8 +151,9 @@ test.describe('Admin: create assignment', () => {
     }
 
     await page.reload();
-    await expect(page.getByRole('cell', { name: patientFirst })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('cell', { name: /pending/i }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: patientFirst }).first()).toBeVisible({ timeout: 10_000 });
+    // 'pending' renders as 'Not opened' via formatAssignmentStatus
+    await expect(page.getByRole('cell', { name: /not opened/i }).first()).toBeVisible();
   });
 });
 

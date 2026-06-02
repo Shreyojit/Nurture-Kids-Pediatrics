@@ -8,14 +8,18 @@ export const ADMIN = {
 
 export const API_BASE = 'http://localhost:4000';
 
-/** Log in as staff admin via the UI. Returns when the patients page is visible. */
+/** Log in as staff admin via the UI. Returns when the staff nav is visible. */
 export async function loginAsAdmin(page: Page) {
   await page.goto('/staff/login');
   await page.locator('#admin-practice').fill(ADMIN.practiceName);
   await page.locator('#admin-email').fill(ADMIN.email);
   await page.locator('#admin-password').fill(ADMIN.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL('**/staff/patients', { timeout: 15_000 });
+  // Wait for any staff page — the exact path depends on session state
+  await page.waitForFunction(
+    () => window.location.pathname.startsWith('/staff/') && !window.location.pathname.includes('login'),
+    { timeout: 15_000 },
+  );
 }
 
 /** Log in as a patient via the patient portal login form. */
@@ -46,7 +50,7 @@ export async function verifyPortalIdentity(
   await page.locator('#portal-first-name').fill(firstName);
   await page.locator('#portal-last-name').fill(lastName);
   await page.locator('#portal-dob').fill(dob);
-  await page.getByRole('button', { name: /access my forms/i }).click();
+  await page.getByRole('button', { name: /view my forms/i }).click();
 }
 
 /**

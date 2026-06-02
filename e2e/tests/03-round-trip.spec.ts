@@ -10,7 +10,7 @@
  *   6. Reach and verify the confirmation page
  *   7. Admin navigates to Submissions and sees the completed entry
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { loginAsAdmin, ADMIN, fillFormStep } from '../helpers/auth';
 
 const SUFFIX = `${Date.now()}`;
@@ -83,7 +83,7 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
 
     // The UI success panel is visible
     await expect(page.getByRole('button', { name: /copy portal link/i })).toBeVisible();
-    await expect(page.getByText(PATIENT.first)).toBeVisible();
+    await expect(page.locator('em').filter({ hasText: PATIENT.first })).toBeVisible();
   });
 
   // ── Step 2: patient verifies identity ────────────────────────────────────
@@ -102,7 +102,7 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     await page.locator('#portal-first-name').fill(PATIENT.first);
     await page.locator('#portal-last-name').fill(PATIENT.last);
     await page.locator('#portal-dob').fill(PATIENT.dob);
-    await page.getByRole('button', { name: /access my forms/i }).click();
+    await page.getByRole('button', { name: /view my forms/i }).click();
 
     // Greeting appears with child's name
     await expect(
@@ -127,7 +127,7 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     await page.locator('#portal-first-name').fill(PATIENT.first);
     await page.locator('#portal-last-name').fill(PATIENT.last);
     await page.locator('#portal-dob').fill(PATIENT.dob);
-    await page.getByRole('button', { name: /access my forms/i }).click();
+    await page.getByRole('button', { name: /view my forms/i }).click();
     await page.waitForSelector('[class*="patient-portal-start-btn"], button:has-text("Start")', {
       timeout: 15_000,
     });
@@ -176,7 +176,8 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
 
     // Confirmation page (or any URL containing "/confirmation" or showing confirmation code)
     await page.waitForURL(/\/confirmation/, { timeout: 30_000 });
-    await expect(page.getByText(/confirmation|submitted|thank you/i)).toBeVisible({ timeout: 10_000 });
+    // "Paperwork Submitted" heading appears on the confirmation page
+    await expect(page.getByRole('heading', { name: /submitted/i })).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Step 4: admin reviews the completed submission ────────────────────────
@@ -191,8 +192,9 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     await page.goto('/staff/submissions');
 
     // Look for the patient name in the submissions table
+    // Match by full last name (includes timestamp suffix) to avoid hitting rows from prior runs
     await expect(
-      page.getByRole('cell', { name: new RegExp(PATIENT.first, 'i') }),
+      page.getByRole('cell', { name: new RegExp(PATIENT.last, 'i') }).first(),
     ).toBeVisible({ timeout: 15_000 });
 
     // Status should be "Completed" (or "Downloaded" once exported)

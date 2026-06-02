@@ -60,7 +60,7 @@ async function createPatientAndAssignment(
 test.describe('Patient: portal login form', () => {
   test('login page renders correctly', async ({ page }) => {
     await page.goto('/parent/login');
-    await expect(page.getByText('Patient sign-in')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Patient sign-in' })).toBeVisible();
     await expect(page.locator('#signin-first')).toBeVisible();
     await expect(page.locator('#signin-last')).toBeVisible();
     await expect(page.locator('#signin-dob')).toBeVisible();
@@ -90,13 +90,11 @@ test.describe('Patient: dashboard', () => {
   const firstName = 'Dash';
   const lastName = `Patient${suffix}`;
   const dob = '2019-07-22';
-  let fillUrl = '';
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     const token = await getAdminToken(page);
-    const result = await createPatientAndAssignment(page, token, firstName, lastName, dob);
-    if (result) fillUrl = result.fillUrl;
+    await createPatientAndAssignment(page, token, firstName, lastName, dob);
     await page.close();
   });
 
@@ -108,8 +106,8 @@ test.describe('Patient: dashboard', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
 
     await expect(page).toHaveURL(/\/parent\/dashboard/, { timeout: 15_000 });
-    // Greeting includes the child's first name
-    await expect(page.getByText(new RegExp(firstName, 'i'))).toBeVisible();
+    // Greeting heading includes the child's first name
+    await expect(page.getByRole('heading').filter({ hasText: new RegExp(firstName, 'i') })).toBeVisible();
   });
 
   test('dashboard shows pending form card', async ({ page }) => {
@@ -170,7 +168,7 @@ test.describe('Patient: portal link (identity verification)', () => {
     await page.locator('#portal-first-name').fill('Wrong');
     await page.locator('#portal-last-name').fill('Person');
     await page.locator('#portal-dob').fill('2000-01-01');
-    await page.getByRole('button', { name: /access my forms/i }).click();
+    await page.getByRole('button', { name: /view my forms/i }).click();
 
     await expect(page.locator('[class*="error"], .error')).toBeVisible({ timeout: 10_000 });
   });
@@ -187,10 +185,12 @@ test.describe('Patient: portal link (identity verification)', () => {
     await page.locator('#portal-first-name').fill(firstName);
     await page.locator('#portal-last-name').fill(lastName);
     await page.locator('#portal-dob').fill(dob);
-    await page.getByRole('button', { name: /access my forms/i }).click();
+    await page.getByRole('button', { name: /view my forms/i }).click();
 
-    // Should see a greeting with the child's first name
-    await expect(page.getByText(new RegExp(`hi.*${firstName}`, 'i'))).toBeVisible({ timeout: 15_000 });
+    // Should see the greeting heading with the child's first name
+    await expect(
+      page.getByRole('heading').filter({ hasText: new RegExp(firstName, 'i') }),
+    ).toBeVisible({ timeout: 15_000 });
     // Should see at least one form card with a "Start" button
     await expect(page.getByRole('button', { name: /start/i }).first()).toBeVisible();
   });
