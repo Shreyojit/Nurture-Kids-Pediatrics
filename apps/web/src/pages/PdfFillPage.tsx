@@ -5,6 +5,7 @@ import { PdfOverlayFillView } from '../components/PdfOverlayFillView';
 import { api } from '../lib/api';
 import { ensurePdfjsWorker } from '../lib/pdfjsSetup';
 import { getLocal, removeLocal, setLocal } from '../lib/storage';
+import { getPatientSession } from '../lib/patientSession';
 import type { FormTemplate, TemplateField } from '../lib/types';
 
 ensurePdfjsWorker();
@@ -436,6 +437,10 @@ export function PdfFillPage() {
         confirmation_code: completed.confirmation_code,
         completed: true,
       });
+      if (getPatientSession()) {
+        navigate('/parent/dashboard');
+        return;
+      }
       const portalAssignments = getLocal<Array<{ session_id: string; status: string; practice_slug: string }>>('pediform_portal_assignments', []);
       const nextForm = portalAssignments.find(
         (a) => a.session_id !== sessionId && a.status !== 'completed',
