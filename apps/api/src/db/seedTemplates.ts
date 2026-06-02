@@ -100,6 +100,10 @@ const PDF_FILES: Record<string, { source: string; acroform: string }> = {
     source: 'asq48mos_source.pdf',
     acroform: 'asq48mos_acroform.pdf',
   },
+  '1722df6d-573e-4671-8db6-f39fbbf11fa9': {
+    source: 'lead_risk_source.pdf',
+    acroform: 'lead_risk_acroform.pdf',
+  },
 };
 
 export function seedTemplates(): void {
