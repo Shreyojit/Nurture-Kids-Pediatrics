@@ -36,6 +36,9 @@ const TARGETS: Array<{ id: string; source: string; acroform: string }> = [
   { id: '30684745-8590-471d-b842-e3eb6d5c16cd', source: 'asq9mos_source.pdf',  acroform: 'asq9mos_acroform.pdf' },
   { id: '0428202b-938a-4a88-b422-a58343de4726', source: 'asq12mos_source.pdf', acroform: 'asq12mos_acroform.pdf' },
   { id: '46a56232-79fd-4bc2-afc0-632de573b214', source: 'asq18mos_source.pdf', acroform: 'asq18mos_acroform.pdf' },
+  { id: 'd5dc70ff-7d29-4f74-9aea-c387eec9e6c4', source: 'asq24mos_source.pdf', acroform: 'asq24mos_acroform.pdf' },
+  { id: '06a6b2e5-7746-431b-a49b-50e2e35f3156', source: 'asq36mos_source.pdf', acroform: 'asq36mos_acroform.pdf' },
+  { id: '3761fe08-1151-4f61-8411-75c78332ca2e', source: 'asq48mos_source.pdf', acroform: 'asq48mos_acroform.pdf' },
 ];
 
 async function main() {
