@@ -354,7 +354,7 @@ export function runMigrations(): void {
   migrateSubmissionsCheckConstraint();
   normalizeTemplatePaths();
   ensurePatientPortalToken();
-  fixAsq30RadioGroups();
+  fixAsqRadioGroups();
   renameSunshinePractice();
   ensurePatientDocumentsTable();
   ensureOrgLocationHierarchy();
@@ -636,17 +636,23 @@ function migrateLegacyPatientAppointmentColumns(): void {
 }
 
 /**
- * Applies correct group_id / group_value to all ASQ-30 radio_option fields from
- * the seed data. Runs on every startup so deployments that skipped the seed
- * (because they already had fields) still get the fix.
+ * Re-syncs all ASQ field properties (acro_field_name, positions, group_id, group_value,
+ * font_size) from the seed data on every startup. This ensures deployments that were
+ * initially seeded with incomplete or stale field definitions are corrected without
+ * needing a manual re-seed. field_id is the stable key; response mappings are preserved.
  */
-function fixAsq30RadioGroups(): void {
+function fixAsqRadioGroups(): void {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const dataFile = path.join(__dirname, '..', 'seeds', 'templateSeedData.json');
   if (!fs.existsSync(dataFile)) return;
 
-  type FieldRecord = { template_id: string; field_id: string; field_type: string; group_id: string | null; group_value: string | null };
+  type FieldRecord = {
+    template_id: string; field_id: string; field_type: string;
+    acro_field_name: string; page_number: number;
+    x: number; y: number; width: number; height: number; font_size?: number | null;
+    group_id: string | null; group_value: string | null;
+  };
   type GroupRecord = { id: string; template_id: string; group_type: string; group_name: string; acro_group_name: string; created_at: string };
 
   const { fields, groups } = JSON.parse(fs.readFileSync(dataFile, 'utf-8')) as {
@@ -654,18 +660,12 @@ function fixAsq30RadioGroups(): void {
     groups: GroupRecord[];
   };
 
-  const ASQ30_ID = '9b6d260c-9659-4740-85df-38c81bd7ceda';
-
-  // Skip if the ASQ-30 template doesn't exist in this DB (e.g. test environments)
-  const templateExists = db
-    .prepare(`select 1 from pdf_templates where id = ?`)
-    .get(ASQ30_ID);
-  if (!templateExists) return;
-
-  const radioFields = fields.filter((f) => f.template_id === ASQ30_ID && f.field_type === 'radio_option');
-  const asqGroups = groups.filter((g) => g.template_id === ASQ30_ID);
-
-  const now = nowIso();
+  const ASQ_IDS = [
+    '9b6d260c-9659-4740-85df-38c81bd7ceda',  // ASQ-30
+    '30684745-8590-471d-b842-e3eb6d5c16cd',  // ASQ-9
+    '0428202b-938a-4a88-b422-a58343de4726',  // ASQ-12
+    '46a56232-79fd-4bc2-afc0-632de573b214',  // ASQ-18
+  ];
 
   const insertGroup = db.prepare(`
     insert or ignore into field_groups
@@ -675,28 +675,39 @@ function fixAsq30RadioGroups(): void {
 
   const updateField = db.prepare(`
     update pdf_template_fields
-    set group_id = ?, group_value = ?, updated_at = ?
+    set acro_field_name = ?, page_number = ?, x = ?, y = ?, width = ?, height = ?,
+        font_size = ?, group_id = ?, group_value = ?, updated_at = ?
     where template_id = ? and field_id = ?
-      and (group_id is not ? or group_value is not ?)
   `);
 
-  db.transaction(() => {
-    for (const g of asqGroups) {
-      insertGroup.run(g.id, g.template_id, g.group_type, g.group_name, g.acro_group_name, g.created_at, now);
-    }
-    let updated = 0;
-    for (const f of radioFields) {
-      const result = updateField.run(
-        f.group_id ?? null, f.group_value ?? null, now,
-        ASQ30_ID, f.field_id,
-        f.group_id ?? null, f.group_value ?? null,
-      );
-      updated += result.changes;
-    }
-    if (updated > 0) {
-      console.log(`[migrate] fixAsq30RadioGroups: corrected ${updated} radio field group assignments`);
-    }
-  })();
+  const now = nowIso();
+  let totalUpdated = 0;
+
+  for (const templateId of ASQ_IDS) {
+    const templateExists = db.prepare(`select 1 from pdf_templates where id = ?`).get(templateId);
+    if (!templateExists) continue;
+
+    const templateFields = fields.filter((f) => f.template_id === templateId);
+    const templateGroups = groups.filter((g) => g.template_id === templateId);
+
+    db.transaction(() => {
+      for (const g of templateGroups) {
+        insertGroup.run(g.id, g.template_id, g.group_type, g.group_name, g.acro_group_name, g.created_at, now);
+      }
+      for (const f of templateFields) {
+        const result = updateField.run(
+          f.acro_field_name, f.page_number, f.x, f.y, f.width, f.height,
+          f.font_size ?? 12, f.group_id ?? null, f.group_value ?? null, now,
+          templateId, f.field_id,
+        );
+        totalUpdated += result.changes;
+      }
+    })();
+  }
+
+  if (totalUpdated > 0) {
+    console.log(`[migrate] fixAsqRadioGroups: resynced ${totalUpdated} ASQ field definitions from seed data`);
+  }
 }
 
 function ensurePatientDocumentsTable(): void {
