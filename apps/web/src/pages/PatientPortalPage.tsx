@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { setPatientSession, type PatientPortalForm } from '../lib/patientSession';
 import '../styles/patientPortal.css';
 
 type PortalInfo = {
@@ -139,6 +140,30 @@ export function PatientPortalPage() {
       });
       setCachedIdentity({ firstName, lastName, dob });
       setVerified(result);
+      // Persist the session so that after submitting a form the patient is
+      // routed back to /parent/dashboard instead of the anonymous confirmation page.
+      const forms: PatientPortalForm[] = result.assignments.map((a) => ({
+        assignment_id: a.assignment_id,
+        template_name: a.template_name,
+        template_key: a.template_key ?? '',
+        session_id: a.session_id,
+        practice_slug: a.practice_slug,
+        practice_name: result.practice_name,
+        template_id: a.template_id,
+        status: a.status,
+      }));
+      setPatientSession({
+        identity: { firstName: firstName.trim(), lastName: lastName.trim(), dob: dob.trim().slice(0, 10) },
+        access: {
+          patient_first_name: result.patient_first_name,
+          practice_name: result.practice_name,
+          practice_names: [result.practice_name],
+          next_appointment_date: result.next_appointment_date,
+          next_appointment_time: result.next_appointment_time,
+          forms,
+          documents: [],
+        },
+      });
     } catch (e: unknown) {
       setVerifyError((e as Error).message);
     } finally {
