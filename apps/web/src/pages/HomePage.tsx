@@ -12,7 +12,7 @@ export function HomePage() {
           </p>
 
           <div className="actions" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginTop: 20 }}>
-            <Link to="/parent/login" className="btn-outline-link">
+            <Link to="/parent/welcome" className="btn-outline-link">
               Patient sign-in
             </Link>
             <Link to="/staff/login" className="btn-outline-link">
@@ -27,7 +27,7 @@ export function HomePage() {
             <p className="text-muted">
               Access assigned forms and shared patient files using your name and date of birth — no account needed.
             </p>
-            <Link to="/parent/login">Patient sign-in</Link>
+            <Link to="/parent/welcome">Patient sign-in</Link>
             {' · '}
             <Link to="/parent/register">New patient registration</Link>
           </div>

@@ -9,6 +9,7 @@ import { PatientFamilyDashboard } from './pages/PatientFamilyDashboard';
 import { ParentFormPage } from './pages/ParentFormPage';
 import { PdfFillPage } from './pages/PdfFillPage';
 import { ParentLoginPage } from './pages/ParentLoginPage';
+import { PatientWelcomePage } from './pages/PatientWelcomePage';
 import { getPatientSession, clearPatientSession, type PatientSession } from './lib/patientSession';
 import {
   clearStaffSession,
@@ -75,7 +76,7 @@ export function App() {
   }
 
   const rootRedirect = isPatientOnly
-    ? <Navigate to="/parent/login" replace />
+    ? <Navigate to="/parent/welcome" replace />
     : <HomePage />;
 
   return (
@@ -89,7 +90,8 @@ export function App() {
       <Routes>
         <Route path="/" element={rootRedirect} />
 
-        {/* Patient login/dashboard — accessible in all modes */}
+        {/* Patient welcome + login/dashboard — accessible in all modes */}
+        <Route path="/parent/welcome" element={<PatientWelcomePage />} />
         <Route path="/parent/login" element={<ParentLoginPage onPatientSession={onPatientSession} />} />
         <Route
           path="/parent/dashboard"

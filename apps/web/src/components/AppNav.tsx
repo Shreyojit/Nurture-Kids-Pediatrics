@@ -15,12 +15,15 @@ function formatStaffRole(role: StaffSession['role']): string {
 
 export function AppNav({ staffSession, patientSession, onLogout, appMode }: Props) {
   const location = useLocation();
+  const isWelcomePage = location.pathname === '/parent/welcome';
   const isFamilyFillLink =
     location.pathname.includes('/fill/portal') || location.pathname.includes('/fill/bundle');
   const isPatientPortal =
     location.pathname.startsWith('/parent/') || location.pathname.includes('/forms');
   const isAdminOnly = appMode === 'admin';
   const isPatientOnly = appMode === 'patient';
+
+  if (isWelcomePage) return null;
 
   if (isFamilyFillLink) {
     return (
@@ -112,7 +115,7 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
               </>
             ) : (
               <>
-                {!isPatientOnly && <Link to="/parent/login">Patient sign-in</Link>}
+                {!isPatientOnly && <Link to="/parent/welcome">Patient sign-in</Link>}
                 {!isPatientOnly && <Link to="/staff/login">Admin Login</Link>}
               </>
             )}
