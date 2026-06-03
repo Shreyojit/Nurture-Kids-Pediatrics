@@ -33,7 +33,7 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
     );
   }
 
-  if (patientSession && isPatientPortal && !isAdminOnly) {
+  if (patientSession && isPatientPortal) {
     return (
       <div className="portal-nav">
         <div
