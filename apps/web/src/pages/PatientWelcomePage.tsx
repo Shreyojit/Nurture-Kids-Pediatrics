@@ -6,27 +6,30 @@ const PRACTICE_PHONE = import.meta.env.VITE_PRACTICE_PHONE as string | undefined
 
 export function PatientWelcomePage() {
   const navigate = useNavigate();
-  const practiceName = PRACTICE_NAME ?? 'Our Practice';
+  const practiceName = PRACTICE_NAME ?? 'PediForm Pro';
   const practicePhone = PRACTICE_PHONE ?? null;
 
   return (
     <div className="pw-root">
       <header className="pw-header">
-        <div className="pw-logo-mark">
-          <svg viewBox="0 0 16 16">
-            <path d="M8 14s-6-3.5-6-8a6 6 0 0 1 12 0c0 4.5-6 8-6 8z" />
-          </svg>
+        <div className="pw-header-inner">
+          <div className="pw-logo-mark">
+            <svg viewBox="0 0 16 16">
+              <path d="M8 14s-6-3.5-6-8a6 6 0 0 1 12 0c0 4.5-6 8-6 8z" />
+            </svg>
+          </div>
+          <span className="pw-practice-name">{practiceName}</span>
+          <span className="pw-for-families">For families</span>
         </div>
-        <span className="pw-practice-name">{practiceName} Pediatrics</span>
       </header>
 
       <main className="pw-main">
         <div className="pw-card">
-          <p className="pw-eyebrow">Upcoming wellness visit</p>
+          <p className="pw-kicker">Upcoming wellness visit</p>
 
           <h1 className="pw-heading">
             Thank you for taking a few minutes — for your child,{' '}
-            <em>and for our team.</em> It means a lot.
+            <em>and for our team.</em>
           </h1>
 
           <p className="pw-body">
@@ -77,21 +80,21 @@ export function PatientWelcomePage() {
             Begin your child's forms <span className="pw-btn-arrow">→</span>
           </button>
 
-          <p className="pw-footer-note">
-            {practicePhone ? (
-              <>
-                Questions? We're here —{' '}
-                <a href={`tel:${practicePhone}`}>{practicePhone}</a>
-                <br />
-              </>
-            ) : null}
-            We look forward to seeing you soon.
-          </p>
+          {practicePhone && (
+            <p className="pw-footer-note">
+              Questions? We're here — <a href={`tel:${practicePhone}`}>{practicePhone}</a>
+              <br />
+              We look forward to seeing you soon.
+            </p>
+          )}
+          {!practicePhone && (
+            <p className="pw-footer-note">We look forward to seeing you soon.</p>
+          )}
         </div>
       </main>
 
       <footer className="pw-page-footer">
-        &copy; {new Date().getFullYear()} {practiceName} Pediatrics &nbsp;·&nbsp; Texas &nbsp;·&nbsp;{' '}
+        &copy; {new Date().getFullYear()} {practiceName} &nbsp;·&nbsp;{' '}
         <a href="#">Privacy Policy</a>
       </footer>
     </div>

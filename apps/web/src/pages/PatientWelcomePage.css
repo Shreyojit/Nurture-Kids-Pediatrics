@@ -1,37 +1,33 @@
 .pw-root {
-  --pw-teal:       #0a7c6a;
-  --pw-teal-light: #e6f5f2;
-  --pw-teal-mid:   #b2ddd6;
-  --pw-sand:       #faf8f4;
-  --pw-ink:        #1c2320;
-  --pw-ink-soft:   #4a5552;
-  --pw-ink-muted:  #8a9491;
-  --pw-white:      #ffffff;
-  --pw-border:     #dde8e6;
-  --pw-accent:     #d4a853;
-
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--pw-sand);
-  font-family: 'DM Sans', 'Inter', sans-serif;
-  color: var(--pw-ink);
+  background: #e8f4ea;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #0f2235;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Header — matches AppNav exactly */
 .pw-header {
-  padding: 1.25rem 2rem;
+  background: #0b2e68;
+  color: #ffffff;
+  padding: 12px 0;
+}
+
+.pw-header-inner {
+  width: min(980px, 94vw);
+  margin: 0 auto;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid var(--pw-border);
-  background: var(--pw-white);
 }
 
 .pw-logo-mark {
-  width: 32px;
-  height: 32px;
-  background: var(--pw-teal);
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -40,8 +36,8 @@
 }
 
 .pw-logo-mark svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: white;
   stroke-width: 2;
@@ -49,92 +45,107 @@
 }
 
 .pw-practice-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--pw-ink);
-  letter-spacing: 0.02em;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
 }
 
+.pw-for-families {
+  font-size: 0.7rem;
+  background: #22a06b;
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* Main */
 .pw-main {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 3rem 1.5rem;
+  padding: 2.5rem 1.5rem;
 }
 
+/* Card — matches site .card style */
 .pw-card {
-  background: var(--pw-white);
-  border: 1px solid var(--pw-border);
-  border-radius: 20px;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #d4e8d6;
+  box-shadow: 0 10px 32px rgba(15, 34, 53, 0.06);
   max-width: 520px;
   width: 100%;
-  padding: 2.75rem 2.5rem;
+  padding: 28px 28px;
   position: relative;
   overflow: hidden;
-  animation: pw-fadeUp 0.55s ease both;
+  animation: pw-fadeUp 0.45s ease both;
 }
 
 @keyframes pw-fadeUp {
-  from { opacity: 0; transform: translateY(18px); }
+  from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Top accent strip using site's nav color */
 .pw-card::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 4px;
-  background: linear-gradient(90deg, var(--pw-teal) 0%, var(--pw-accent) 100%);
-  border-radius: 20px 20px 0 0;
+  background: linear-gradient(90deg, #0b2e68 0%, #2563eb 100%);
+  border-radius: 16px 16px 0 0;
 }
 
-.pw-eyebrow {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--pw-teal);
-  margin-bottom: 1rem;
+/* Typography */
+.pw-kicker {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2e7d32;
+  margin-bottom: 8px;
 }
 
 .pw-heading {
-  font-family: 'DM Serif Display', serif;
-  font-size: 28px;
-  line-height: 1.25;
-  color: var(--pw-ink);
-  margin-bottom: 1.25rem;
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #0f2235;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
 }
 
 .pw-heading em {
-  font-style: italic;
-  color: var(--pw-teal);
+  font-style: normal;
+  color: #2563eb;
 }
 
 .pw-body {
-  font-size: 15px;
-  line-height: 1.75;
-  color: var(--pw-ink-soft);
-  margin-bottom: 1.75rem;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #5a6b7d;
+  margin-bottom: 20px;
 }
 
+/* Trust pills */
 .pw-trust-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 1.75rem;
+  margin-bottom: 20px;
 }
 
 .pw-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--pw-teal-light);
-  color: var(--pw-teal);
+  background: #e8f0ff;
+  color: #1d4ed8;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 5px 12px;
-  border-radius: 100px;
+  border-radius: 999px;
 }
 
 .pw-pill svg {
@@ -147,12 +158,13 @@
   flex-shrink: 0;
 }
 
+/* Info box */
 .pw-info-box {
-  background: var(--pw-sand);
-  border: 1px solid var(--pw-border);
-  border-radius: 12px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1.75rem;
+  background: #f0f9f4;
+  border: 1px solid #c5d8e8;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
   display: flex;
   gap: 12px;
   align-items: flex-start;
@@ -161,7 +173,7 @@
 .pw-info-icon {
   width: 32px;
   height: 32px;
-  background: var(--pw-teal-light);
+  background: #e8f0ff;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -174,70 +186,68 @@
   width: 15px;
   height: 15px;
   fill: none;
-  stroke: var(--pw-teal);
+  stroke: #2563eb;
   stroke-width: 2;
   stroke-linecap: round;
 }
 
 .pw-info-box p {
   font-size: 13.5px;
-  color: var(--pw-ink-soft);
+  color: #5a6b7d;
   line-height: 1.6;
   margin: 0;
 }
 
 .pw-info-box strong {
-  font-weight: 500;
-  color: var(--pw-ink);
+  font-weight: 600;
+  color: #0f2235;
 }
 
+/* CTA button — matches site primary button */
 .pw-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
-  padding: 15px 20px;
-  background: var(--pw-teal);
+  padding: 12px 18px;
+  min-height: 46px;
+  background: #2563eb;
   color: white;
-  font-family: 'DM Sans', 'Inter', sans-serif;
+  font-family: inherit;
   font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0.015em;
-  border: none;
-  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid #2563eb;
+  border-radius: 10px;
   cursor: pointer;
-  text-align: center;
   text-decoration: none;
-  transition: background 0.18s ease, transform 0.12s ease;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .pw-btn:hover {
-  background: #085e50;
-  transform: translateY(-1px);
-}
-
-.pw-btn:active {
-  transform: translateY(0);
+  background: #1d4ed8;
+  border-color: #1d4ed8;
 }
 
 .pw-btn-arrow {
-  margin-left: 6px;
-  display: inline-block;
-  transition: transform 0.18s ease;
+  transition: transform 0.15s ease;
 }
 
 .pw-btn:hover .pw-btn-arrow {
   transform: translateX(3px);
 }
 
+/* Footer note */
 .pw-footer-note {
   text-align: center;
-  margin-top: 1.25rem;
-  font-size: 12.5px;
-  color: var(--pw-ink-muted);
-  line-height: 1.7;
+  margin-top: 16px;
+  font-size: 13px;
+  color: #6b7c8f;
+  line-height: 1.6;
 }
 
 .pw-footer-note a {
-  color: var(--pw-teal);
+  color: #2563eb;
   text-decoration: none;
 }
 
@@ -245,13 +255,14 @@
   text-decoration: underline;
 }
 
+/* Page footer */
 .pw-page-footer {
   text-align: center;
-  padding: 1.25rem;
-  font-size: 11.5px;
-  color: var(--pw-ink-muted);
-  border-top: 1px solid var(--pw-border);
-  background: var(--pw-white);
+  padding: 14px 16px;
+  font-size: 12px;
+  color: #6b7c8f;
+  border-top: 1px solid #c5d8e8;
+  background: #ffffff;
 }
 
 .pw-page-footer a {
@@ -264,6 +275,6 @@
 }
 
 @media (max-width: 480px) {
-  .pw-card { padding: 2rem 1.5rem; }
-  .pw-heading { font-size: 24px; }
+  .pw-card { padding: 20px 18px; border-radius: 12px; }
+  .pw-heading { font-size: 1.3rem; }
 }
