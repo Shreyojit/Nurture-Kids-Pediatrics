@@ -33,7 +33,7 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
     );
   }
 
-  if (patientSession && isPatientPortal) {
+  if (isPatientPortal) {
     return (
       <div className="portal-nav">
         <div
@@ -52,24 +52,26 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
           <Link to="/parent/dashboard" className="portal-nav-brand">
             PediForm Pro
           </Link>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            <Link
-              to="/parent/dashboard"
-              style={{ color: '#fff', fontWeight: 700, marginLeft: 0 }}
-            >
-              My dashboard
-            </Link>
-            <a
-              href="#logout"
-              style={{ color: 'rgba(255,255,255,0.9)', marginLeft: 0 }}
-              onClick={(e) => {
-                e.preventDefault();
-                onLogout?.();
-              }}
-            >
-              Sign out
-            </a>
-          </div>
+          {patientSession && (
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <Link
+                to="/parent/dashboard"
+                style={{ color: '#fff', fontWeight: 700, marginLeft: 0 }}
+              >
+                My dashboard
+              </Link>
+              <a
+                href="#logout"
+                style={{ color: 'rgba(255,255,255,0.9)', marginLeft: 0 }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onLogout?.();
+                }}
+              >
+                Sign out
+              </a>
+            </div>
+          )}
         </div>
       </div>
     );

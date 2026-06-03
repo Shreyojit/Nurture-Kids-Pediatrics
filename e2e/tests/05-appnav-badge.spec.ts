@@ -53,7 +53,7 @@ test.describe('AppNav: patient portal nav (no ADMIN badge)', () => {
     await expect(page.locator('.portal-nav-brand')).toBeVisible();
   });
 
-  test('ADMIN mode badge is not shown to authenticated patient', async ({ page }) => {
+  test('ADMIN mode badge is not shown to authenticated patient on dashboard', async ({ page }) => {
     await goToDashboardWithSession(page);
 
     // The ADMIN badge must never appear while a patient is on their dashboard
@@ -70,5 +70,14 @@ test.describe('AppNav: patient portal nav (no ADMIN badge)', () => {
     await goToDashboardWithSession(page);
 
     await expect(page.getByRole('link', { name: /sign out/i })).toBeVisible();
+  });
+
+  test('ADMIN mode badge is not shown on the patient sign-in page', async ({ page }) => {
+    // No session — patient has not yet logged in
+    await page.goto('/parent/login');
+
+    // Portal nav must render (no admin badge), even before the patient authenticates
+    await expect(page.locator('.portal-nav-brand')).toBeVisible();
+    await expect(page.locator('.mode-badge-admin')).not.toBeVisible();
   });
 });
