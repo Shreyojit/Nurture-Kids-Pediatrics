@@ -12,6 +12,7 @@ import {
   TEST_TEMPLATE_ID,
   TEST_STAFF_ID,
 } from './helpers.js';
+import { db } from '../db/database.js';
 
 const app = buildTestApp();
 
@@ -263,5 +264,131 @@ describe('POST /api/staff/assignments/:id/send-sms', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('ASSIGNMENT_COMPLETED');
+  });
+});
+
+// ── POST /api/staff/assignments – inline new patient ──────────────────────────
+
+describe('POST /api/staff/assignments – inline new patient', () => {
+  it('creates an assignment for a brand-new patient by name + dob', async () => {
+    const res = await request(app)
+      .post('/api/staff/assignments')
+      .set('Authorization', `Bearer ${staffToken()}`)
+      .send({ first_name: 'Liam', last_name: 'Torres', dob: '2021-04-10', template_ids: [TEST_TEMPLATE_ID] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.patient_name).toBe('Liam Torres');
+    expect(res.body.data.bundle_id).toBeTruthy();
+  });
+
+  it('reuses an existing patient when name + dob already match', async () => {
+    await request(app)
+      .post('/api/staff/assignments')
+      .set('Authorization', `Bearer ${staffToken()}`)
+      .send({ first_name: 'Mia', last_name: 'Chen', dob: '2022-08-20', template_ids: [TEST_TEMPLATE_ID] });
+
+    resetAssignmentTables();
+
+    await request(app)
+      .post('/api/staff/assignments')
+      .set('Authorization', `Bearer ${staffToken()}`)
+      .send({ first_name: 'Mia', last_name: 'Chen', dob: '2022-08-20', template_ids: [TEST_TEMPLATE_ID] });
+
+    const { n } = db
+      .prepare(
+        `select count(*) as n from patients
+         where child_first_name = 'Mia' and child_last_name = 'Chen'
+           and practice_id = '${TEST_PRACTICE_ID}'`,
+      )
+      .get() as { n: number };
+    expect(n).toBe(1);
+  });
+
+  it('returns 422 when first_name is missing', async () => {
+    const res = await request(app)
+      .post('/api/staff/assignments')
+      .set('Authorization', `Bearer ${staffToken()}`)
+      .send({ last_name: 'Brown', dob: '2020-01-01', template_ids: [TEST_TEMPLATE_ID] });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('returns 422 when dob is missing', async () => {
+    const res = await request(app)
+      .post('/api/staff/assignments')
+      .set('Authorization', `Bearer ${staffToken()}`)
+      .send({ first_name: 'Jake', last_name: 'Brown', template_ids: [TEST_TEMPLATE_ID] });
+
+    expect(res.status).toBe(422);
+  });
+});
+
+// ── POST /api/staff/assignments – default expiry ──────────────────────────────
+
+describe('POST /api/staff/assignments – default expiry', () => {
+  it('defaults to 7 days when expires_in_days is omitted', async () => {
+    const res = await request(app)
+      .post('/api/staff/assignments')
+      .set('Authorization', `Bearer ${staffToken()}`)
+      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID] });
+
+    expect(res.status).toBe(200);
+    const diffDays =
+      (new Date(res.body.data.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBeGreaterThan(6);
+    expect(diffDays).toBeLessThan(8);
+  });
+});
+
+// ── DELETE /api/staff/assignments/:id ─────────────────────────────────────────
+
+describe('DELETE /api/staff/assignments/:id', () => {
+  it('deletes an existing assignment and returns deleted: true', async () => {
+    const { id } = insertAssignment();
+
+    const res = await request(app)
+      .delete(`/api/staff/assignments/${id}`)
+      .set('Authorization', `Bearer ${staffToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.deleted).toBe(true);
+  });
+
+  it('actually removes the row from the database', async () => {
+    const { id } = insertAssignment();
+
+    await request(app)
+      .delete(`/api/staff/assignments/${id}`)
+      .set('Authorization', `Bearer ${staffToken()}`);
+
+    const row = db.prepare('select id from form_assignments where id = ?').get(id);
+    expect(row).toBeUndefined();
+  });
+
+  it('returns 404 for a non-existent assignment', async () => {
+    const res = await request(app)
+      .delete(`/api/staff/assignments/${randomUUID()}`)
+      .set('Authorization', `Bearer ${staffToken()}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when the assignment belongs to a different practice', async () => {
+    const { id } = insertAssignment();
+    const otherToken = staffToken({ practiceId: randomUUID() });
+
+    const res = await request(app)
+      .delete(`/api/staff/assignments/${id}`)
+      .set('Authorization', `Bearer ${otherToken}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 401 without an auth token', async () => {
+    const { id } = insertAssignment();
+
+    const res = await request(app).delete(`/api/staff/assignments/${id}`);
+
+    expect(res.status).toBe(401);
   });
 });

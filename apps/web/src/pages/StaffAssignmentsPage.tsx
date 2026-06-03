@@ -27,17 +27,6 @@ type AssignmentRecord = {
   submission_id: string | null;
 };
 
-type BundleResult = {
-  bundle_id: string | null;
-  bundle_token: string;
-  patient_name: string;
-  template_names: string[];
-  fill_url: string;
-  qr_code_data_url: string;
-  portal_url?: string;
-  expires_at: string;
-};
-
 type PatientSearchResult = {
   id: string;
   child_first_name: string;
@@ -72,20 +61,8 @@ export function StaffAssignmentsPage({ token }: Props) {
   const [dob, setDob] = useState('');
 
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
-  const [expiresInDays, setExpiresInDays] = useState(7);
   const [submitting, setSubmitting] = useState(false);
-
-  const [createdBundle, setCreatedBundle] = useState<BundleResult | null>(null);
-  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
-  const [showQrId, setShowQrId] = useState<string | null>(null);
-
-  const [smsPhone, setSmsPhone] = useState('');
-  const [smsSending, setSmsSending] = useState(false);
-  const [smsResult, setSmsResult] = useState('');
-
-  const [emailAddress, setEmailAddress] = useState('');
-  const [emailSending, setEmailSending] = useState(false);
-  const [emailResult, setEmailResult] = useState('');
+  const [assignedMessage, setAssignedMessage] = useState<string | null>(null);
 
   async function loadTemplates() {
     if (!token) return;
@@ -164,7 +141,6 @@ export function StaffAssignmentsPage({ token }: Props) {
     setSearchQuery(`${p.child_first_name} ${p.child_last_name}`);
     setShowDropdown(false);
     setSearchResults([]);
-    if (p.account_email) setEmailAddress(p.account_email);
   }
 
   function toggleTemplate(id: string) {
@@ -183,41 +159,31 @@ export function StaffAssignmentsPage({ token }: Props) {
     if (!token || !canCreate()) return;
     setSubmitting(true);
     setError('');
-    setSmsResult('');
-    setEmailResult('');
     try {
-      const days = expiresInDays >= 1 ? expiresInDays : 7;
       const body =
         patientMode === 'existing'
-          ? {
-              patient_id: selectedPatient!.id,
-              template_ids: selectedTemplateIds,
-              expires_in_days: days,
-            }
-          : {
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-              dob,
-              template_ids: selectedTemplateIds,
-              expires_in_days: days,
-            };
+          ? { patient_id: selectedPatient!.id, template_ids: selectedTemplateIds }
+          : { first_name: firstName.trim(), last_name: lastName.trim(), dob, template_ids: selectedTemplateIds };
 
-      const result = await api<BundleResult>('/api/staff/assignments', {
+      await api('/api/staff/assignments', {
         method: 'POST',
         headers: authHeader(token),
         body: JSON.stringify(body),
       });
-      setCreatedBundle(result);
+
+      const patientName =
+        patientMode === 'existing'
+          ? `${selectedPatient!.child_first_name} ${selectedPatient!.child_last_name}`
+          : `${firstName.trim()} ${lastName.trim()}`;
+
+      setAssignedMessage(patientName);
       setShowForm(false);
-      setShowQrId(null);
-      // Reset form
       setSelectedPatient(null);
       setSearchQuery('');
       setFirstName('');
       setLastName('');
       setDob('');
       setSelectedTemplateIds([]);
-      setExpiresInDays(7);
       await loadAssignments();
     } catch (e) {
       setError((e as Error).message);
@@ -237,88 +203,6 @@ export function StaffAssignmentsPage({ token }: Props) {
     }
   }
 
-  async function handleSendSms() {
-    if (!token || !smsPhone || !createdBundle?.bundle_id) return;
-    setSmsSending(true);
-    setSmsResult('');
-    try {
-      await api(`/api/staff/assignments/bundle/${createdBundle.bundle_id}/send-sms`, {
-        method: 'POST',
-        headers: authHeader(token),
-        body: JSON.stringify({ phone: smsPhone }),
-      });
-      setSmsResult('SMS sent.');
-    } catch (e) {
-      setSmsResult(`Failed: ${(e as Error).message}`);
-    } finally {
-      setSmsSending(false);
-    }
-  }
-
-  async function handleSendEmail() {
-    if (!token || !emailAddress || !createdBundle?.bundle_id) return;
-    setEmailSending(true);
-    setEmailResult('');
-    try {
-      await api(`/api/staff/assignments/bundle/${createdBundle.bundle_id}/send-email`, {
-        method: 'POST',
-        headers: authHeader(token),
-        body: JSON.stringify({ email: emailAddress }),
-      });
-      setEmailResult('Email sent.');
-    } catch (e) {
-      setEmailResult(`Failed: ${(e as Error).message}`);
-    } finally {
-      setEmailSending(false);
-    }
-  }
-
-  function copyLink(id: string, url: string) {
-    const onSuccess = () => {
-      setCopiedLinkId(id);
-      setTimeout(() => setCopiedLinkId(null), 2000);
-    };
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(onSuccess).catch(() => fallbackCopy(url, onSuccess));
-    } else {
-      fallbackCopy(url, onSuccess);
-    }
-  }
-
-  function fallbackCopy(url: string, onSuccess: () => void) {
-    const el = document.createElement('textarea');
-    el.value = url;
-    el.style.position = 'fixed';
-    el.style.opacity = '0';
-    document.body.appendChild(el);
-    el.select();
-    if (document.execCommand('copy')) onSuccess();
-    document.body.removeChild(el);
-  }
-
-  async function viewLink(a: AssignmentRecord) {
-    if (!token) return;
-    try {
-      const result = await api<{ fill_url: string; qr_code_data_url: string; bundle_id: string | null; portal_url?: string }>(
-        `/api/staff/assignments/${a.id}/link`,
-        { headers: authHeader(token) },
-      );
-      setCreatedBundle({
-        bundle_id: result.bundle_id,
-        bundle_token: '',
-        patient_name: `${a.child_first_name} ${a.child_last_name}`,
-        template_names: [a.template_name],
-        fill_url: result.fill_url,
-        qr_code_data_url: result.qr_code_data_url,
-        portal_url: result.portal_url,
-        expires_at: a.expires_at,
-      });
-      setShowQrId(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
   const statusStyle = (status: string) => ({
     padding: '2px 8px',
     borderRadius: 4,
@@ -331,15 +215,15 @@ export function StaffAssignmentsPage({ token }: Props) {
     <div className="container">
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0 }}>Forms sent to families</h2>
+          <h2 style={{ margin: 0 }}>Form assignments</h2>
           <button
             onClick={() => {
               setShowForm((v) => !v);
-              setCreatedBundle(null);
+              setAssignedMessage(null);
               setError('');
             }}
           >
-            {showForm ? 'Cancel' : '+ Send a form'}
+            {showForm ? 'Cancel' : '+ Assign forms'}
           </button>
         </div>
 
@@ -347,7 +231,7 @@ export function StaffAssignmentsPage({ token }: Props) {
 
         {showForm && (
           <div className="card" style={{ background: '#f0f7ff', marginTop: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Send a form</h3>
+            <h3 style={{ marginTop: 0 }}>Assign forms to patient</h3>
 
             {/* Patient mode toggle */}
             <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid #c5d8f0', width: 'fit-content' }}>
@@ -477,20 +361,6 @@ export function StaffAssignmentsPage({ token }: Props) {
               </div>
             )}
 
-            <div className="row" style={{ marginBottom: 12 }}>
-              <div className="field">
-                <label>Expires After (days)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={90}
-                  value={expiresInDays}
-                  onChange={(e) => setExpiresInDays(Number(e.target.value))}
-                  style={{ width: 80 }}
-                />
-              </div>
-            </div>
-
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
                 Forms to send
@@ -531,13 +401,8 @@ export function StaffAssignmentsPage({ token }: Props) {
               )}
             </div>
 
-            <button
-              onClick={handleCreate}
-              disabled={submitting || !canCreate()}
-            >
-              {submitting
-                ? 'Creating...'
-                : `Send ${selectedTemplateIds.length > 1 ? `${selectedTemplateIds.length} forms` : 'form'}`}
+            <button onClick={handleCreate} disabled={submitting || !canCreate()}>
+              {submitting ? 'Assigning...' : `Assign ${selectedTemplateIds.length > 1 ? `${selectedTemplateIds.length} forms` : 'form'}`}
             </button>
             {patientMode === 'new' && (
               <p style={{ fontSize: 12, color: '#666', marginTop: 8, marginBottom: 0 }}>
@@ -547,84 +412,16 @@ export function StaffAssignmentsPage({ token }: Props) {
           </div>
         )}
 
-        {createdBundle && (
-          <div style={{ marginTop: 16, padding: 16, background: '#fff', borderRadius: 8, border: '1px solid #b3d4f7' }}>
-            <h3 style={{ marginTop: 0, marginBottom: 4 }}>
-              Form sent to <em>{createdBundle.patient_name}</em>
-            </h3>
-            <p style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-              Forms: {createdBundle.template_names.join(', ')}
+        {assignedMessage && (
+          <div style={{ marginTop: 16, padding: 16, background: '#f0fdf4', borderRadius: 8, border: '1px solid #86efac' }}>
+            <p style={{ margin: '0 0 6px', fontWeight: 600, color: '#166534' }}>
+              Forms assigned to {assignedMessage}
             </p>
-            <p style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-              These assignments expire: {new Date(createdBundle.expires_at).toLocaleDateString()}
+            <p style={{ margin: 0, fontSize: 13, color: '#374151' }}>
+              Ask the patient to sign in at{' '}
+              <strong>admin.pediformpro.com/parent/login</strong>{' '}
+              using their first name, last name, and date of birth to access their forms.
             </p>
-            <div style={{ marginBottom: 12, padding: '10px 12px', background: '#eef6ff', borderRadius: 6, border: '1px solid #b3d4f7' }}>
-              <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#1a56db' }}>
-                Patient Portal Link (permanent)
-              </p>
-              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#555' }}>
-                Share this one link — all current and future assignments for this patient will appear here automatically.
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={() => copyLink('bundle', createdBundle.fill_url)}>
-                  {copiedLinkId === 'bundle' ? 'Copied!' : 'Copy Portal Link'}
-                </button>
-                <button className="secondary" onClick={() => setShowQrId(showQrId === 'bundle' ? null : 'bundle')}>
-                  {showQrId === 'bundle' ? 'Hide QR' : 'Show QR Code'}
-                </button>
-              </div>
-            </div>
-            {showQrId === 'bundle' && (
-              <img
-                src={createdBundle.qr_code_data_url}
-                alt="QR code"
-                style={{ marginBottom: 12, border: '1px solid #ddd', borderRadius: 4, display: 'block' }}
-              />
-            )}
-            {createdBundle.bundle_id && (
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 240, padding: 12, background: '#f8faff', borderRadius: 8, border: '1px solid #dde' }}>
-                  <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>Send via SMS</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="tel"
-                      placeholder="+15551234567"
-                      value={smsPhone}
-                      onChange={(e) => setSmsPhone(e.target.value)}
-                      style={{ width: 160 }}
-                    />
-                    <button onClick={handleSendSms} disabled={smsSending || !smsPhone}>
-                      {smsSending ? 'Sending...' : 'Send SMS'}
-                    </button>
-                  </div>
-                  {smsResult && (
-                    <p style={{ marginTop: 6, fontSize: 13, color: smsResult.startsWith('Failed') ? '#c00' : '#0a0' }}>
-                      {smsResult}
-                    </p>
-                  )}
-                </div>
-                <div style={{ flex: 1, minWidth: 240, padding: 12, background: '#f8faff', borderRadius: 8, border: '1px solid #dde' }}>
-                  <label style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>Send via Email</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="email"
-                      placeholder="patient@example.com"
-                      value={emailAddress}
-                      onChange={(e) => setEmailAddress(e.target.value)}
-                      style={{ width: 200 }}
-                    />
-                    <button onClick={handleSendEmail} disabled={emailSending || !emailAddress}>
-                      {emailSending ? 'Sending...' : 'Send Email'}
-                    </button>
-                  </div>
-                  {emailResult && (
-                    <p style={{ marginTop: 6, fontSize: 13, color: emailResult.startsWith('Failed') ? '#c00' : '#0a0' }}>
-                      {emailResult}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -637,8 +434,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                   <th>Patient</th>
                   <th>Form</th>
                   <th>Status</th>
-                  <th>Sent by</th>
-                  <th>Link expires</th>
+                  <th>Assigned by</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -649,17 +445,7 @@ export function StaffAssignmentsPage({ token }: Props) {
                     <td>{a.template_name}</td>
                     <td><span style={statusStyle(a.status)}>{formatAssignmentStatus(a.status)}</span></td>
                     <td>{a.assigned_by_email}</td>
-                    <td>{new Date(a.expires_at).toLocaleDateString()}</td>
-                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {(a.status === 'pending' || a.status === 'in_progress') && (
-                        <button
-                          className="secondary"
-                          style={{ fontSize: 12, padding: '2px 8px' }}
-                          onClick={() => viewLink(a)}
-                        >
-                          Copy link
-                        </button>
-                      )}
+                    <td>
                       <button
                         className="secondary"
                         style={{ fontSize: 12, padding: '2px 8px', color: '#c00', borderColor: '#c00' }}
@@ -676,7 +462,7 @@ export function StaffAssignmentsPage({ token }: Props) {
         )}
 
         {assignments.length === 0 && !showForm && (
-          <p style={{ marginTop: 24, color: '#666' }}>No forms sent yet. Click "+ Send a form" to get started.</p>
+          <p style={{ marginTop: 24, color: '#666' }}>No forms assigned yet. Click "+ Assign forms" to get started.</p>
         )}
       </div>
     </div>
