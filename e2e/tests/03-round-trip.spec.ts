@@ -115,7 +115,7 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
 
   // ── Step 3: patient starts and fills the form ─────────────────────────────
 
-  test('Patient fills the form and reaches confirmation', async ({ page }) => {
+  test('Patient fills the form and reaches dashboard or confirmation', async ({ page }) => {
     if (!portalFillUrl) {
       test.skip(true, 'No portal link from previous step');
       return;
@@ -148,8 +148,8 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     for (let step = 0; step < MAX_STEPS; step++) {
       const url = page.url();
 
-      // We're done when we hit the confirmation page
-      if (url.includes('/confirmation')) break;
+      // We're done when we hit the confirmation page or the patient dashboard
+      if (url.includes('/confirmation') || url.includes('/parent/dashboard')) break;
 
       // PDF forms (M-CHAT etc.) — look for a submit / save button on the PDF overlay
       const pdfSubmit = page.getByRole('button', {
@@ -174,10 +174,15 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
       await page.waitForTimeout(800);
     }
 
-    // Confirmation page (or any URL containing "/confirmation" or showing confirmation code)
-    await page.waitForURL(/\/confirmation/, { timeout: 30_000 });
-    // "Paperwork Submitted" heading appears on the confirmation page
-    await expect(page.getByRole('heading', { name: /submitted/i })).toBeVisible({ timeout: 10_000 });
+    // Patient lands on /parent/dashboard (portal session set) or /confirmation (no session)
+    await page.waitForURL(/\/confirmation|\/parent\/dashboard/, { timeout: 30_000 });
+    // Either the dashboard greeting or the submission heading must be visible
+    const onDashboard = page.url().includes('/parent/dashboard');
+    if (onDashboard) {
+      await expect(page.getByRole('heading').filter({ hasText: new RegExp(PATIENT.first, 'i') })).toBeVisible({ timeout: 10_000 });
+    } else {
+      await expect(page.getByRole('heading', { name: /submitted/i })).toBeVisible({ timeout: 10_000 });
+    }
   });
 
   // ── Step 4: admin reviews the completed submission ────────────────────────

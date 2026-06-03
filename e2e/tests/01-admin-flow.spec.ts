@@ -151,7 +151,9 @@ test.describe('Admin: create assignment', () => {
     }
 
     await page.reload();
-    await expect(page.getByRole('cell', { name: patientFirst }).first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
+    // Match by unique last name (includes timestamp) to avoid collisions with prior runs
+    await expect(page.getByRole('cell', { name: new RegExp(patientLast, 'i') }).first()).toBeVisible({ timeout: 10_000 });
     // 'pending' renders as 'Not opened' via formatAssignmentStatus
     await expect(page.getByRole('cell', { name: /not opened/i }).first()).toBeVisible();
   });
