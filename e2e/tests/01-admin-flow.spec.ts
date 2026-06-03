@@ -123,8 +123,7 @@ test.describe('Admin: create assignment', () => {
     expect(response.status()).toBe(200);
 
     // UI shows the success banner with patient name and login instructions
-    await expect(page.getByText(/forms assigned to/i)).toBeVisible();
-    await expect(page.getByText(new RegExp(patientFirst, 'i'))).toBeVisible();
+    await expect(page.getByText(new RegExp(`forms assigned to.*${patientFirst}`, 'i'))).toBeVisible();
     await expect(page.getByText(/admin\.pediformpro\.com\/parent\/login/i)).toBeVisible();
   });
 

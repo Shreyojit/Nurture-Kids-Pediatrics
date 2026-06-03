@@ -79,9 +79,8 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     const body = await response.json();
     portalFillUrl = body.data?.fill_url ?? body.fill_url ?? '';
 
-    // The UI shows the success message
-    await expect(page.getByText(/forms assigned to/i)).toBeVisible();
-    await expect(page.getByText(new RegExp(PATIENT.first, 'i'))).toBeVisible();
+    // The UI shows the success message with the patient name
+    await expect(page.getByText(new RegExp(`forms assigned to.*${PATIENT.first}`, 'i'))).toBeVisible();
   });
 
   // ── Step 2: patient verifies identity ────────────────────────────────────
