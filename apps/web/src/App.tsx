@@ -1,8 +1,5 @@
 import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { AppNav } from './components/AppNav';
-import { AssignmentVerifyPage } from './pages/AssignmentVerifyPage';
-import { BundleVerifyPage } from './pages/BundleVerifyPage';
-import { PatientPortalPage } from './pages/PatientPortalPage';
 import { HomePage } from './pages/HomePage';
 import { ParentConfirmationPage } from './pages/ParentConfirmationPage';
 import { PatientFamilyDashboard } from './pages/PatientFamilyDashboard';
@@ -142,12 +139,12 @@ export function App() {
           </>
         )}
 
-        <Route path="/:practice/fill/portal/:token" element={<PatientPortalPage />} />
-        <Route path="/:practice/fill/bundle/:token" element={<BundleVerifyPage />} />
-        <Route path="/:practice/fill/:token" element={<AssignmentVerifyPage />} />
-        <Route path="/fill/portal/:token" element={<PatientPortalPage />} />
-        <Route path="/fill/bundle/:token" element={<BundleVerifyPage />} />
-        <Route path="/fill/:token" element={<AssignmentVerifyPage />} />
+        <Route path="/:practice/fill/portal/:token" element={<Navigate to="/parent/login" replace />} />
+        <Route path="/:practice/fill/bundle/:token" element={<Navigate to="/parent/login" replace />} />
+        <Route path="/:practice/fill/:token" element={<Navigate to="/parent/login" replace />} />
+        <Route path="/fill/portal/:token" element={<Navigate to="/parent/login" replace />} />
+        <Route path="/fill/bundle/:token" element={<Navigate to="/parent/login" replace />} />
+        <Route path="/fill/:token" element={<Navigate to="/parent/login" replace />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
