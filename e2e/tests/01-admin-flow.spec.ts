@@ -139,7 +139,7 @@ test.describe('Admin: create assignment', () => {
       headers: { Authorization: `Bearer ${token}` },
       data: {
         first_name: patientFirst,
-        last_name: `Table${uniqueSuffix}`,
+        last_name: patientLast,
         dob: patientDob,
         template_ids: await getFirstPublishedTemplateIds(page, token),
       },
