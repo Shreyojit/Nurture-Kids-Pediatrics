@@ -45,7 +45,9 @@ export default defineConfig({
           stderr: 'pipe',
         },
         {
-          command: 'npm run dev:admin -w apps/web',
+          // VITE_API_BASE_URL='' forces relative /api paths → vite proxy → localhost:4000.
+          // Without this override, .env.admin sets it to the production URL which breaks CI.
+          command: 'VITE_API_BASE_URL= npm run dev:admin -w apps/web',
           url: 'http://localhost:5174',
           reuseExistingServer: true,
           timeout: 30_000,
