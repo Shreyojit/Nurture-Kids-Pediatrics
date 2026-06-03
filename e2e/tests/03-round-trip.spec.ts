@@ -54,7 +54,7 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     }
 
     await page.goto('/staff/assignments');
-    await page.getByRole('button', { name: /\+ Send a form/i }).click();
+    await page.getByRole('button', { name: /\+ Assign forms/i }).click();
 
     // New patient mode
     await page.getByRole('button', { name: /new patient/i }).click();
@@ -66,24 +66,22 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     // Select the first available template checkbox
     await page.locator('input[type="checkbox"]').first().check();
 
-    // Intercept the POST response to grab the portal URL
+    // Intercept the POST response to grab the portal URL for subsequent patient steps
     const responsePromise = page.waitForResponse(
       (res) =>
         res.url().includes('/api/staff/assignments') && res.request().method() === 'POST',
     );
 
-    await page.getByRole('button', { name: /send \d* form|send form/i }).click();
+    await page.getByRole('button', { name: /assign \d* ?forms?|assign form/i }).click();
 
     const response = await responsePromise;
     expect(response.status()).toBe(200);
     const body = await response.json();
     portalFillUrl = body.data?.fill_url ?? body.fill_url ?? '';
 
-    expect(portalFillUrl).toContain('/fill/portal/');
-
-    // The UI success panel is visible
-    await expect(page.getByRole('button', { name: /copy portal link/i })).toBeVisible();
-    await expect(page.locator('em').filter({ hasText: PATIENT.first })).toBeVisible();
+    // The UI shows the success message
+    await expect(page.getByText(/forms assigned to/i)).toBeVisible();
+    await expect(page.getByText(new RegExp(PATIENT.first, 'i'))).toBeVisible();
   });
 
   // ── Step 2: patient verifies identity ────────────────────────────────────

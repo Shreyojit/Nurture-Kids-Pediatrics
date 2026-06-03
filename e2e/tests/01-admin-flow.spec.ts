@@ -49,7 +49,7 @@ test.describe('Admin: navigation', () => {
   test('can navigate to Assignments page', async ({ page }) => {
     await page.getByRole('link', { name: 'Sent Forms' }).click();
     await expect(page).toHaveURL(/\/staff\/assignments/);
-    await expect(page.getByRole('heading', { name: /forms sent to families/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /form assignments/i })).toBeVisible();
   });
 
   test('can navigate to Submissions page', async ({ page }) => {
@@ -74,12 +74,12 @@ test.describe('Admin: create assignment', () => {
     await page.goto('/staff/assignments');
   });
 
-  test('opens "Send a form" panel when button is clicked', async ({ page }) => {
-    await page.getByRole('button', { name: /\+ Send a form/i }).click();
-    await expect(page.getByRole('heading', { name: /send a form/i })).toBeVisible();
+  test('opens "Assign forms" panel when button is clicked', async ({ page }) => {
+    await page.getByRole('button', { name: /\+ Assign forms/i }).click();
+    await expect(page.getByRole('heading', { name: /assign forms to patient/i })).toBeVisible();
   });
 
-  test('creates assignment for a new patient and shows portal link', async ({ page }) => {
+  test('creates assignment for a new patient and shows success message', async ({ page }) => {
     // Skip if no published templates exist
     const templates = await page.request.get('http://localhost:4000/api/staff/templates', {
       headers: {
@@ -96,7 +96,7 @@ test.describe('Admin: create assignment', () => {
     }
 
     // Open the form panel
-    await page.getByRole('button', { name: /\+ Send a form/i }).click();
+    await page.getByRole('button', { name: /\+ Assign forms/i }).click();
 
     // Switch to "New Patient" mode
     await page.getByRole('button', { name: /new patient/i }).click();
@@ -113,23 +113,19 @@ test.describe('Admin: create assignment', () => {
       await checkboxes.nth(i).check();
     }
 
-    // Intercept the API response to capture the portal fill URL
     const responsePromise = page.waitForResponse(
       (res) => res.url().includes('/api/staff/assignments') && res.request().method() === 'POST',
     );
 
-    await page.getByRole('button', { name: /send \d* form|send form/i }).click();
+    await page.getByRole('button', { name: /assign \d* ?forms?|assign form/i }).click();
 
     const response = await responsePromise;
     expect(response.status()).toBe(200);
-    const body = await response.json();
-    const fillUrl: string = body.data?.fill_url ?? body.fill_url ?? '';
-    expect(fillUrl).toContain('/fill/portal/');
 
-    // UI shows the success panel with "Copy Portal Link"
-    await expect(page.getByRole('button', { name: /copy portal link/i })).toBeVisible();
-    // Success heading contains the patient name (inside <em>)
-    await expect(page.locator('em').filter({ hasText: patientFirst })).toBeVisible();
+    // UI shows the success banner with patient name and login instructions
+    await expect(page.getByText(/forms assigned to/i)).toBeVisible();
+    await expect(page.getByText(new RegExp(patientFirst, 'i'))).toBeVisible();
+    await expect(page.getByText(/admin\.pediformpro\.com\/parent\/login/i)).toBeVisible();
   });
 
   test('shows the new assignment in the All sent forms table', async ({ page }) => {
