@@ -24,7 +24,8 @@ jobs:
 
       - name: Install API dependencies
         working-directory: apps/api
-        run: npm install
+        run: |
+          for i in 1 2 3; do npm install && break || { echo "npm install attempt $i failed, retrying…"; sleep 15; }; done
 
       - name: Run Vitest
         working-directory: apps/api
@@ -42,7 +43,8 @@ jobs:
           node-version: '22'
 
       - name: Install all workspace dependencies
-        run: npm install
+        run: |
+          for i in 1 2 3; do npm install && break || { echo "npm install attempt $i failed, retrying…"; sleep 15; }; done
 
       - name: Install Playwright Chromium + system deps
         run: npx playwright install --with-deps chromium
@@ -75,7 +77,7 @@ jobs:
       - name: Install and build
         working-directory: apps/api
         run: |
-          npm install --include=dev
+          for i in 1 2 3; do npm install --include=dev && break || { echo "npm install attempt $i failed, retrying…"; sleep 15; }; done
           npm run build
 
       - name: Prepare deployment package
@@ -151,7 +153,7 @@ jobs:
           VITE_APP_MODE: patient
           VITE_API_BASE_URL: ${{ secrets.API_BASE_URL }}
         run: |
-          npm install
+          for i in 1 2 3; do npm install && break || { echo "npm install attempt $i failed, retrying…"; sleep 15; }; done
           npm run build
           mv dist dist-patient
 
