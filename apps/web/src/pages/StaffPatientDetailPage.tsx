@@ -76,15 +76,6 @@ type PublishedTemplate = {
   template_key: string;
 };
 
-type BundleResult = {
-  bundle_id: string | null;
-  bundle_token: string;
-  patient_name: string;
-  template_names: string[];
-  fill_url: string;
-  qr_code_data_url: string;
-  expires_at: string;
-};
 
 export function StaffPatientDetailPage({ token }: Props) {
   const { id = '' } = useParams();
@@ -104,17 +95,8 @@ export function StaffPatientDetailPage({ token }: Props) {
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [showAssignForm, setShowAssignForm] = useState(false);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
-  const [expiresInDays, setExpiresInDays] = useState(7);
   const [assigning, setAssigning] = useState(false);
-  const [createdBundle, setCreatedBundle] = useState<BundleResult | null>(null);
-  const [smsPhone, setSmsPhone] = useState('');
-  const [smsSending, setSmsSending] = useState(false);
-  const [smsResult, setSmsResult] = useState('');
-  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
-  const [showQrId, setShowQrId] = useState<string | null>(null);
-  const [portalLink, setPortalLink] = useState<{ portal_url: string; qr_code_data_url: string } | null>(null);
-  const [portalLinkLoading, setPortalLinkLoading] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  const [assignSuccess, setAssignSuccess] = useState('');
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [autoAssignMsg, setAutoAssignMsg] = useState('');
 
@@ -232,7 +214,7 @@ export function StaffPatientDetailPage({ token }: Props) {
       }>(`/api/staff/assignments/patient/${id}/auto-assign`, {
         method: 'POST',
         headers: authHeader(token),
-        body: JSON.stringify({ expires_in_days: expiresInDays }),
+        body: JSON.stringify({}),
       });
       setAutoAssignMsg(result.message);
       await loadAssignments();
@@ -266,17 +248,14 @@ export function StaffPatientDetailPage({ token }: Props) {
   async function handleAssign() {
     if (!token || selectedTemplateIds.length === 0) return;
     setAssigning(true);
-    setSmsResult('');
     try {
-      const days = expiresInDays >= 1 ? expiresInDays : 7;
-      const result = await api<BundleResult>('/api/staff/assignments', {
+      const result = await api<{ patient_name: string; template_names: string[] }>('/api/staff/assignments', {
         method: 'POST',
         headers: authHeader(token),
-        body: JSON.stringify({ patient_id: id, template_ids: selectedTemplateIds, expires_in_days: days }),
+        body: JSON.stringify({ patient_id: id, template_ids: selectedTemplateIds }),
       });
-      setCreatedBundle(result);
+      setAssignSuccess(`Forms assigned to ${result.patient_name}. Ask them to sign in at admin.pediformpro.com/parent/login`);
       setShowAssignForm(false);
-      setShowQrId(null);
       setSelectedTemplateIds([]);
       await loadAssignments();
     } catch (e) {
@@ -298,84 +277,6 @@ export function StaffPatientDetailPage({ token }: Props) {
     } catch (e) {
       setError((e as Error).message);
     }
-  }
-
-  async function handleSendSms() {
-    if (!token || !smsPhone || !createdBundle?.bundle_id) return;
-    setSmsSending(true);
-    setSmsResult('');
-    try {
-      await api(`/api/staff/assignments/bundle/${createdBundle.bundle_id}/send-sms`, {
-        method: 'POST',
-        headers: authHeader(token),
-        body: JSON.stringify({ phone: smsPhone }),
-      });
-      setSmsResult('SMS sent.');
-    } catch (e) {
-      setSmsResult(`Failed: ${(e as Error).message}`);
-    } finally {
-      setSmsSending(false);
-    }
-  }
-
-  async function loadPortalLink() {
-    if (!token) return;
-    setPortalLinkLoading(true);
-    try {
-      const result = await api<{ portal_url: string; qr_code_data_url: string }>(
-        `/api/staff/patients/${id}/portal-link`,
-        { headers: authHeader(token) },
-      );
-      setPortalLink(result);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setPortalLinkLoading(false);
-    }
-  }
-
-  async function handleRegeneratePortalToken() {
-    if (!token) return;
-    if (!window.confirm('This will invalidate the current portal link. The patient will need the new link to access their forms. Continue?')) return;
-    setRegenerating(true);
-    try {
-      const result = await api<{ portal_url: string; qr_code_data_url: string }>(
-        `/api/staff/patients/${id}/regenerate-portal-token`,
-        { method: 'POST', headers: authHeader(token) },
-      );
-      setPortalLink(result);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  function copyLink(id: string, url: string) {
-    const onSuccess = () => {
-      setCopiedLinkId(id);
-      setTimeout(() => setCopiedLinkId(null), 2000);
-    };
-
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(onSuccess).catch(() => {
-        fallbackCopy(url, onSuccess);
-      });
-    } else {
-      fallbackCopy(url, onSuccess);
-    }
-  }
-
-  function fallbackCopy(url: string, onSuccess: () => void) {
-    const el = document.createElement('textarea');
-    el.value = url;
-    el.style.position = 'fixed';
-    el.style.opacity = '0';
-    document.body.appendChild(el);
-    el.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(el);
-    if (ok) onSuccess();
   }
 
   async function load() {
@@ -560,51 +461,6 @@ export function StaffPatientDetailPage({ token }: Props) {
         </h2>
         {error ? <div className="error">{error}</div> : null}
 
-        {/* ── Patient Portal Link Panel ── */}
-        <div className="card" style={{ background: '#f0f7ff', marginBottom: 12, marginTop: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Patient Portal Link</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: '#555' }}>
-                One permanent link for all forms assigned to this patient.
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {!portalLink && (
-                <button className="secondary" onClick={loadPortalLink} disabled={portalLinkLoading}>
-                  {portalLinkLoading ? 'Loading...' : 'View Portal Link'}
-                </button>
-              )}
-              <button
-                className="secondary"
-                style={{ color: '#c00', borderColor: '#c00' }}
-                onClick={handleRegeneratePortalToken}
-                disabled={regenerating}
-              >
-                {regenerating ? 'Regenerating...' : 'Regenerate Link'}
-              </button>
-            </div>
-          </div>
-          {portalLink && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ padding: '8px 12px', background: '#eef6ff', borderRadius: 6, border: '1px solid #b3d4f7', fontSize: 13, marginBottom: 8, wordBreak: 'break-all' }}>
-                {portalLink.portal_url}
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={() => copyLink('portal', portalLink.portal_url)}>
-                  {copiedLinkId === 'portal' ? 'Copied!' : 'Copy Link'}
-                </button>
-                <button className="secondary" onClick={() => setShowQrId(showQrId === 'portal' ? null : 'portal')}>
-                  {showQrId === 'portal' ? 'Hide QR' : 'Show QR'}
-                </button>
-              </div>
-              {showQrId === 'portal' && (
-                <img src={portalLink.qr_code_data_url} alt="Portal QR code" style={{ marginTop: 8, border: '1px solid #ddd', borderRadius: 4, display: 'block' }} />
-              )}
-            </div>
-          )}
-        </div>
-
         {/* ── Form Assignment Panel ── */}
         <div className="card card-subtle" style={{ marginBottom: 20, marginTop: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
@@ -621,10 +477,7 @@ export function StaffPatientDetailPage({ token }: Props) {
               <button
                 type="button"
                 className="btn-inline"
-                onClick={() => {
-                  setShowAssignForm((v) => !v);
-                  setCreatedBundle(null);
-                }}
+                onClick={() => setShowAssignForm((v) => !v)}
               >
                 {showAssignForm ? 'Cancel' : '+ Send a form'}
               </button>
@@ -648,20 +501,6 @@ export function StaffPatientDetailPage({ token }: Props) {
 
           {showAssignForm && (
             <div style={{ marginTop: 16 }}>
-              <div className="row">
-                <div className="field">
-                  <label>Expires After (days)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={90}
-                    value={expiresInDays}
-                    onChange={(e) => setExpiresInDays(Number(e.target.value))}
-                    style={{ width: 80 }}
-                  />
-                </div>
-              </div>
-
               <div style={{ marginBottom: 12 }}>
                 <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
                   Forms to send
@@ -714,49 +553,10 @@ export function StaffPatientDetailPage({ token }: Props) {
             </div>
           )}
 
-          {createdBundle && (
-            <div style={{ marginTop: 16, padding: 16, background: '#fff', borderRadius: 8, border: '1px solid #b3d4f7' }}>
-              <p style={{ fontWeight: 600, marginBottom: 4 }}>Bundle created</p>
-              <p style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-                Forms: {createdBundle.template_names.join(', ')}
-              </p>
-              <p style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
-                Expires: {new Date(createdBundle.expires_at).toLocaleDateString()}
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <button onClick={() => copyLink('bundle', createdBundle.fill_url)} style={{ whiteSpace: 'nowrap' }}>
-                  {copiedLinkId === 'bundle' ? 'Copied!' : 'Copy Link'}
-                </button>
-                <button className="secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => setShowQrId(showQrId === 'bundle' ? null : 'bundle')}>
-                  {showQrId === 'bundle' ? 'Hide QR' : 'Show QR'}
-                </button>
-              </div>
-              {showQrId === 'bundle' && (
-                <img src={createdBundle.qr_code_data_url} alt="QR code" style={{ marginBottom: 12, border: '1px solid #ddd', borderRadius: 4, display: 'block' }} />
-              )}
-              {createdBundle.bundle_id && (
-                <div style={{ marginTop: 4 }}>
-                  <label style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>Send via SMS</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="tel"
-                      placeholder="+15551234567"
-                      value={smsPhone}
-                      onChange={(e) => setSmsPhone(e.target.value)}
-                      style={{ width: 180 }}
-                    />
-                    <button onClick={handleSendSms} disabled={smsSending || !smsPhone}>
-                      {smsSending ? 'Sending...' : 'Send SMS'}
-                    </button>
-                  </div>
-                  {smsResult && (
-                    <p style={{ marginTop: 6, fontSize: 13, color: smsResult.startsWith('Failed') ? '#c00' : '#0a0' }}>
-                      {smsResult}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+          {assignSuccess && (
+            <p style={{ marginTop: 12, fontSize: 13, color: '#155724', background: '#d4edda', padding: '8px 12px', borderRadius: 6 }}>
+              {assignSuccess}
+            </p>
           )}
 
           {assignments.length > 0 && (
@@ -768,7 +568,6 @@ export function StaffPatientDetailPage({ token }: Props) {
                     <th>Form</th>
                     <th>Status</th>
                     <th>Sent by</th>
-                    <th>Link expires</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -788,37 +587,7 @@ export function StaffPatientDetailPage({ token }: Props) {
                         </span>
                       </td>
                       <td>{a.assigned_by_email}</td>
-                      <td>{new Date(a.expires_at).toLocaleDateString()}</td>
                       <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(a.status === 'pending' || a.status === 'in_progress') && (
-                          <button
-                            className="secondary"
-                            style={{ fontSize: 12, padding: '2px 8px' }}
-                            onClick={async () => {
-                              if (!token) return;
-                              try {
-                                const result = await api<{ fill_url: string; qr_code_data_url: string; bundle_id: string | null }>(
-                                  `/api/staff/assignments/${a.id}/link`,
-                                  { headers: authHeader(token) },
-                                );
-                                setCreatedBundle({
-                                  bundle_id: result.bundle_id,
-                                  bundle_token: '',
-                                  patient_name: `${detail?.patient?.child_first_name ?? ''} ${detail?.patient?.child_last_name ?? ''}`,
-                                  template_names: [a.template_name],
-                                  fill_url: result.fill_url,
-                                  qr_code_data_url: result.qr_code_data_url,
-                                  expires_at: a.expires_at,
-                                });
-                                setShowQrId(null);
-                              } catch (e) {
-                                setError((e as Error).message);
-                              }
-                            }}
-                          >
-                            Copy link
-                          </button>
-                        )}
                         <button
                           className="secondary"
                           style={{ fontSize: 12, padding: '2px 8px', color: '#c00', borderColor: '#c00' }}
