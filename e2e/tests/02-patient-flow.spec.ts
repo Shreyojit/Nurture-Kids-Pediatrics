@@ -183,7 +183,7 @@ test.describe('Patient: portal link (identity verification)', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
 
     await expect(page).toHaveURL(/\/parent\/dashboard/, { timeout: 15_000 });
-    // Should see at least one form card with a "Start" button
-    await expect(page.getByRole('button', { name: /start/i }).first()).toBeVisible();
+    // Button says "Start" for pending or "Continue" for in_progress — match both
+    await expect(page.getByRole('button', { name: /start|continue/i }).first()).toBeVisible({ timeout: 10_000 });
   });
 });

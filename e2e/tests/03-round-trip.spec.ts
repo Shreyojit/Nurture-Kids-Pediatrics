@@ -100,8 +100,8 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
 
     await expect(page).toHaveURL(/\/parent\/dashboard/, { timeout: 15_000 });
 
-    // At least one pending form with a Start button
-    await expect(page.getByRole('button', { name: /start/i }).first()).toBeVisible();
+    // Button says "Start" for pending or "Continue" for in_progress — match both
+    await expect(page.getByRole('button', { name: /start|continue/i }).first()).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Step 3: patient starts and fills the form ─────────────────────────────
@@ -118,12 +118,10 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
     await page.locator('#signin-last').fill(PATIENT.last);
     await page.locator('#signin-dob').fill(PATIENT.dob);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForSelector('[class*="patient-portal-start-btn"], button:has-text("Start")', {
-      timeout: 15_000,
-    });
+    await page.waitForSelector('[class*="patient-portal-start-btn"]', { timeout: 15_000 });
 
-    // Click the first "Start" button
-    await page.getByRole('button', { name: /start/i }).first().click();
+    // Click the first "Start" or "Continue" button
+    await page.getByRole('button', { name: /start|continue/i }).first().click();
 
     // Overview page → click "Start Paperwork" (or "Fill PDF Directly")
     const overviewBtn = page.getByRole('button', { name: /start paperwork|fill pdf directly|fill step-by-step/i });
