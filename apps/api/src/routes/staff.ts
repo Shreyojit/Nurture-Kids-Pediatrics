@@ -90,6 +90,8 @@ type TemplateFieldContext = {
   required?: boolean;
   section_key?: string | null;
   display_order?: number;
+  group_id?: string | null;
+  group_value?: string | null;
 };
 
 function unwrapResponseValue(entry: unknown): unknown {
@@ -115,7 +117,12 @@ function buildTemplateBoundAnswers(input: {
   const answersByFieldId: Record<string, { value: unknown; answered: boolean }> = {};
 
   for (const field of sortedFields) {
-    const raw = input.responses[field.field_id];
+    let raw = input.responses[field.field_id];
+    if (field.field_type === 'radio_option' && field.group_id) {
+      const groupRaw = input.responses[`__group_${field.group_id}`];
+      const selectedGroupValue = unwrapResponseValue(groupRaw);
+      raw = selectedGroupValue === field.group_value ? selectedGroupValue : undefined;
+    }
     const value = unwrapResponseValue(raw);
     const answered =
       value !== undefined &&
