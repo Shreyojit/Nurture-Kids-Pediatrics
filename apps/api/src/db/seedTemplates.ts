@@ -166,6 +166,12 @@ export function seedTemplates(): void {
   const countFieldsForTemplate = db.prepare(
     'select count(*) as n from pdf_template_fields where template_id = ?',
   );
+  const countStaleRadioFields = db.prepare(
+    `select count(*) as n from pdf_template_fields
+     where template_id = ? and field_type = 'radio_option' and group_id is null`,
+  );
+  const deleteFieldsForTemplate = db.prepare('delete from pdf_template_fields where template_id = ?');
+  const deleteGroupsForTemplate = db.prepare('delete from field_groups where template_id = ?');
 
   const seedAll = db.transaction(() => {
     let seededTemplates = 0;
@@ -200,6 +206,19 @@ export function seedTemplates(): void {
         t.status, staff.id, t.created_at, t.updated_at,
       );
       updateTemplatePaths.run(sourceRelPath, acroformRelPath, t.id);
+
+      // If the seed data has radio_option fields with group_ids, but the DB has those fields
+      // with group_id=null, the template was seeded before group support was added.
+      // Clear it so the seeder re-runs with correct group_id values.
+      const seedHasGroups = groups.some((g) => g.template_id === t.id);
+      if (seedHasGroups) {
+        const stale = (countStaleRadioFields.get(t.id) as { n: number }).n;
+        if (stale > 0) {
+          deleteFieldsForTemplate.run(t.id);
+          deleteGroupsForTemplate.run(t.id);
+          console.log(`[seed] cleared ${stale} stale radio fields for template ${t.template_key} (group_id was null)`);
+        }
+      }
 
       // Skip field seeding if this template already has fields — DB is the source of truth.
       const existing = (countFieldsForTemplate.get(t.id) as { n: number }).n;
