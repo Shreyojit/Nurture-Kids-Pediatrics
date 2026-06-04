@@ -139,21 +139,18 @@ test.describe('Patient: portal link (identity verification)', () => {
     await page.close();
   });
 
-  test('portal URL shows identity verification form', async ({ page }) => {
+  test('login page shows identity fields', async ({ page }) => {
     if (!fillUrl) {
       test.skip(true, 'No portal link — no published templates');
       return;
     }
 
-    // The fill URL may be an absolute URL like http://localhost:5173/fill/portal/...
-    // Strip the origin and navigate relative to baseURL
-    const path = fillUrl.replace(/^https?:\/\/[^/]+/, '');
-    await page.goto(path);
+    await page.goto('/parent/login');
 
-    await expect(page.getByText(/confirm your identity/i)).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('#portal-first-name')).toBeVisible();
-    await expect(page.locator('#portal-last-name')).toBeVisible();
-    await expect(page.locator('#portal-dob')).toBeVisible();
+    await expect(page.getByText(/patient sign-in/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('#signin-first')).toBeVisible();
+    await expect(page.locator('#signin-last')).toBeVisible();
+    await expect(page.locator('#signin-dob')).toBeVisible();
   });
 
   test('wrong identity shows verification error', async ({ page }) => {
@@ -162,15 +159,14 @@ test.describe('Patient: portal link (identity verification)', () => {
       return;
     }
 
-    const path = fillUrl.replace(/^https?:\/\/[^/]+/, '');
-    await page.goto(path);
+    await page.goto('/parent/login');
 
-    await page.locator('#portal-first-name').fill('Wrong');
-    await page.locator('#portal-last-name').fill('Person');
-    await page.locator('#portal-dob').fill('2000-01-01');
-    await page.getByRole('button', { name: /view my forms/i }).click();
+    await page.locator('#signin-first').fill('Wrong');
+    await page.locator('#signin-last').fill('Person');
+    await page.locator('#signin-dob').fill('2000-01-01');
+    await page.getByRole('button', { name: /sign in/i }).click();
 
-    await expect(page.locator('[class*="error"], .error')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.patient-portal-error')).toBeVisible({ timeout: 10_000 });
   });
 
   test('correct identity reveals pending form list', async ({ page }) => {
@@ -179,18 +175,14 @@ test.describe('Patient: portal link (identity verification)', () => {
       return;
     }
 
-    const path = fillUrl.replace(/^https?:\/\/[^/]+/, '');
-    await page.goto(path);
+    await page.goto('/parent/login');
 
-    await page.locator('#portal-first-name').fill(firstName);
-    await page.locator('#portal-last-name').fill(lastName);
-    await page.locator('#portal-dob').fill(dob);
-    await page.getByRole('button', { name: /view my forms/i }).click();
+    await page.locator('#signin-first').fill(firstName);
+    await page.locator('#signin-last').fill(lastName);
+    await page.locator('#signin-dob').fill(dob);
+    await page.getByRole('button', { name: /sign in/i }).click();
 
-    // Should see the greeting heading with the child's first name
-    await expect(
-      page.getByRole('heading').filter({ hasText: new RegExp(firstName, 'i') }),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/parent\/dashboard/, { timeout: 15_000 });
     // Should see at least one form card with a "Start" button
     await expect(page.getByRole('button', { name: /start/i }).first()).toBeVisible();
   });

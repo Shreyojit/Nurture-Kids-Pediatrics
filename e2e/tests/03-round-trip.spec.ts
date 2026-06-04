@@ -21,7 +21,6 @@ const PATIENT = {
 };
 
 // ── shared state set by the "setup" test ─────────────────────────────────────
-let portalFillUrl = '';
 let adminToken = '';
 
 test.describe.serial('Round-trip: admin assigns → patient fills → admin reviews', () => {
@@ -76,8 +75,7 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
 
     const response = await responsePromise;
     expect(response.status()).toBe(200);
-    const body = await response.json();
-    portalFillUrl = body.data?.fill_url ?? body.fill_url ?? '';
+    await response.json();
 
     // The UI shows the success message with the patient name
     await expect(page.getByText(new RegExp(`forms assigned to.*${PATIENT.first}`, 'i'))).toBeVisible();
@@ -85,26 +83,22 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
 
   // ── Step 2: patient verifies identity ────────────────────────────────────
 
-  test('Patient opens portal link and verifies identity', async ({ page }) => {
-    if (!portalFillUrl) {
-      test.skip(true, 'No portal link from previous step');
+  test('Patient signs in and verifies identity', async ({ page }) => {
+    if (!adminToken) {
+      test.skip(true, 'No admin token from previous step');
       return;
     }
 
-    const path = portalFillUrl.replace(/^https?:\/\/[^/]+/, '');
-    await page.goto(path);
+    await page.goto('/parent/login');
 
-    await expect(page.getByText(/confirm your identity/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/patient sign-in/i)).toBeVisible({ timeout: 10_000 });
 
-    await page.locator('#portal-first-name').fill(PATIENT.first);
-    await page.locator('#portal-last-name').fill(PATIENT.last);
-    await page.locator('#portal-dob').fill(PATIENT.dob);
-    await page.getByRole('button', { name: /view my forms/i }).click();
+    await page.locator('#signin-first').fill(PATIENT.first);
+    await page.locator('#signin-last').fill(PATIENT.last);
+    await page.locator('#signin-dob').fill(PATIENT.dob);
+    await page.getByRole('button', { name: /sign in/i }).click();
 
-    // Greeting appears with child's name
-    await expect(
-      page.getByText(new RegExp(`hi.*${PATIENT.first}`, 'i')),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/parent\/dashboard/, { timeout: 15_000 });
 
     // At least one pending form with a Start button
     await expect(page.getByRole('button', { name: /start/i }).first()).toBeVisible();
@@ -113,18 +107,17 @@ test.describe.serial('Round-trip: admin assigns → patient fills → admin revi
   // ── Step 3: patient starts and fills the form ─────────────────────────────
 
   test('Patient fills the form and reaches dashboard or confirmation', async ({ page }) => {
-    if (!portalFillUrl) {
-      test.skip(true, 'No portal link from previous step');
+    if (!adminToken) {
+      test.skip(true, 'No admin token from previous step');
       return;
     }
 
-    // Navigate to portal and verify identity again (no shared auth state across tests)
-    const path = portalFillUrl.replace(/^https?:\/\/[^/]+/, '');
-    await page.goto(path);
-    await page.locator('#portal-first-name').fill(PATIENT.first);
-    await page.locator('#portal-last-name').fill(PATIENT.last);
-    await page.locator('#portal-dob').fill(PATIENT.dob);
-    await page.getByRole('button', { name: /view my forms/i }).click();
+    // Sign in again (no shared auth state across tests)
+    await page.goto('/parent/login');
+    await page.locator('#signin-first').fill(PATIENT.first);
+    await page.locator('#signin-last').fill(PATIENT.last);
+    await page.locator('#signin-dob').fill(PATIENT.dob);
+    await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForSelector('[class*="patient-portal-start-btn"], button:has-text("Start")', {
       timeout: 15_000,
     });
