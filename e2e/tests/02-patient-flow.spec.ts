@@ -30,7 +30,7 @@ async function createPatientAndAssignment(
   firstName: string,
   lastName: string,
   dob: string,
-): Promise<{ fillUrl: string } | null> {
+): Promise<true | null> {
   // Fetch published templates
   const tRes = await page.request.get('http://localhost:4000/api/staff/templates', {
     headers: { Authorization: `Bearer ${token}` },
@@ -49,10 +49,7 @@ async function createPatientAndAssignment(
       template_ids: [published[0].id],
     },
   });
-  if (!aRes.ok()) return null;
-  const aBody = await aRes.json();
-  const fillUrl: string = aBody.data?.fill_url ?? aBody.fill_url ?? '';
-  return fillUrl ? { fillUrl } : null;
+  return aRes.ok() ? true : null;
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -129,19 +126,19 @@ test.describe('Patient: portal link (identity verification)', () => {
   const firstName = 'Portal';
   const lastName = `Link${suffix}`;
   const dob = '2021-04-05';
-  let fillUrl = '';
+  let assigned = false;
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     const token = await getAdminToken(page);
     const result = await createPatientAndAssignment(page, token, firstName, lastName, dob);
-    if (result) fillUrl = result.fillUrl;
+    assigned = result === true;
     await page.close();
   });
 
   test('login page shows identity fields', async ({ page }) => {
-    if (!fillUrl) {
-      test.skip(true, 'No portal link — no published templates');
+    if (!assigned) {
+      test.skip(true, 'No published templates — skipping');
       return;
     }
 
@@ -154,8 +151,8 @@ test.describe('Patient: portal link (identity verification)', () => {
   });
 
   test('wrong identity shows verification error', async ({ page }) => {
-    if (!fillUrl) {
-      test.skip(true, 'No portal link — no published templates');
+    if (!assigned) {
+      test.skip(true, 'No published templates — skipping');
       return;
     }
 
@@ -170,8 +167,8 @@ test.describe('Patient: portal link (identity verification)', () => {
   });
 
   test('correct identity reveals pending form list', async ({ page }) => {
-    if (!fillUrl) {
-      test.skip(true, 'No portal link — no published templates');
+    if (!assigned) {
+      test.skip(true, 'No published templates — skipping');
       return;
     }
 

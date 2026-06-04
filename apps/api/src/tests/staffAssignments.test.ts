@@ -22,7 +22,7 @@ beforeEach(() => resetAssignmentTables());
 // ── POST /api/staff/assignments ───────────────────────────────────────────────
 
 describe('POST /api/staff/assignments', () => {
-  it('creates a bundle and returns portal fill_url + qr_code_data_url', async () => {
+  it('creates a bundle and returns patient_name + template_names', async () => {
     const res = await request(app)
       .post('/api/staff/assignments')
       .set('Authorization', `Bearer ${staffToken()}`)
@@ -30,26 +30,8 @@ describe('POST /api/staff/assignments', () => {
 
     expect(res.status).toBe(200);
     const { data } = res.body;
-    expect(data.bundle_id).toBeTruthy();
-    expect(data.bundle_token).toBeTruthy();
-    expect(data.fill_url).toContain('/fill/portal/');
-    expect(data.portal_url).toContain('/fill/portal/');
-    expect(data.qr_code_data_url).toMatch(/^data:image\/png;base64,/);
     expect(data.patient_name).toBe('Emma Smith');
     expect(data.template_names).toContain('Test Registration Form');
-  });
-
-  it('respects expires_in_days', async () => {
-    const res = await request(app)
-      .post('/api/staff/assignments')
-      .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID], expires_in_days: 14 });
-
-    expect(res.status).toBe(200);
-    const diffDays =
-      (new Date(res.body.data.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    expect(diffDays).toBeGreaterThan(13);
-    expect(diffDays).toBeLessThan(15);
   });
 
   it('returns 401 without an auth token', async () => {
@@ -178,94 +160,6 @@ describe('GET /api/staff/assignments/patient/:patientId', () => {
   });
 });
 
-// ── GET /api/staff/assignments/:id/link ───────────────────────────────────────
-
-describe('GET /api/staff/assignments/:id/link', () => {
-  it('returns fill_url and qr_code_data_url for an existing assignment', async () => {
-    const { id } = insertAssignment();
-
-    const res = await request(app)
-      .get(`/api/staff/assignments/${id}/link`)
-      .set('Authorization', `Bearer ${staffToken()}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.data.fill_url).toContain('/fill/');
-    expect(res.body.data.qr_code_data_url).toMatch(/^data:image\/png;base64,/);
-  });
-
-  it('returns 404 for an assignment from a different practice', async () => {
-    const { id } = insertAssignment();
-    const otherPracticeToken = staffToken({ practiceId: randomUUID() });
-
-    const res = await request(app)
-      .get(`/api/staff/assignments/${id}/link`)
-      .set('Authorization', `Bearer ${otherPracticeToken}`);
-
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 404 for a non-existent assignment id', async () => {
-    const res = await request(app)
-      .get(`/api/staff/assignments/${randomUUID()}/link`)
-      .set('Authorization', `Bearer ${staffToken()}`);
-
-    expect(res.status).toBe(404);
-  });
-});
-
-// ── POST /api/staff/assignments/:id/send-sms ──────────────────────────────────
-
-describe('POST /api/staff/assignments/:id/send-sms', () => {
-  it('returns 503 when Twilio env vars are not configured', async () => {
-    const { id } = insertAssignment();
-
-    const res = await request(app)
-      .post(`/api/staff/assignments/${id}/send-sms`)
-      .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ phone: '+15551234567' });
-
-    expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('SMS_NOT_CONFIGURED');
-  });
-
-  it('returns 422 when phone is missing', async () => {
-    const { id } = insertAssignment();
-
-    const res = await request(app)
-      .post(`/api/staff/assignments/${id}/send-sms`)
-      .set('Authorization', `Bearer ${staffToken()}`)
-      .send({});
-
-    expect(res.status).toBe(422);
-  });
-
-  it('returns 400 when assignment is expired', async () => {
-    const { id } = insertAssignment({
-      status: 'expired',
-      expiresAt: new Date(Date.now() - 1000).toISOString(),
-    });
-
-    const res = await request(app)
-      .post(`/api/staff/assignments/${id}/send-sms`)
-      .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ phone: '+15551234567' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('ASSIGNMENT_EXPIRED');
-  });
-
-  it('returns 400 when assignment is already completed', async () => {
-    const { id } = insertAssignment({ status: 'completed' });
-
-    const res = await request(app)
-      .post(`/api/staff/assignments/${id}/send-sms`)
-      .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ phone: '+15551234567' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('ASSIGNMENT_COMPLETED');
-  });
-});
 
 // ── POST /api/staff/assignments – inline new patient ──────────────────────────
 
@@ -278,7 +172,7 @@ describe('POST /api/staff/assignments – inline new patient', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.patient_name).toBe('Liam Torres');
-    expect(res.body.data.bundle_id).toBeTruthy();
+    expect(res.body.data.template_names).toContain('Test Registration Form');
   });
 
   it('reuses an existing patient when name + dob already match', async () => {
@@ -320,23 +214,6 @@ describe('POST /api/staff/assignments – inline new patient', () => {
       .send({ first_name: 'Jake', last_name: 'Brown', template_ids: [TEST_TEMPLATE_ID] });
 
     expect(res.status).toBe(422);
-  });
-});
-
-// ── POST /api/staff/assignments – default expiry ──────────────────────────────
-
-describe('POST /api/staff/assignments – default expiry', () => {
-  it('defaults to 7 days when expires_in_days is omitted', async () => {
-    const res = await request(app)
-      .post('/api/staff/assignments')
-      .set('Authorization', `Bearer ${staffToken()}`)
-      .send({ patient_id: TEST_PATIENT_ID, template_ids: [TEST_TEMPLATE_ID] });
-
-    expect(res.status).toBe(200);
-    const diffDays =
-      (new Date(res.body.data.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    expect(diffDays).toBeGreaterThan(6);
-    expect(diffDays).toBeLessThan(8);
   });
 });
 

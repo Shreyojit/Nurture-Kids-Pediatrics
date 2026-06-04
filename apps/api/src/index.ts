@@ -15,8 +15,6 @@ import { staffRouter } from './routes/staff.js';
 import { staffTemplatesRouter } from './routes/staffTemplates.js';
 import { staffAssignmentsRouter } from './routes/staffAssignments.js';
 import { staffDocumentsRouter } from './routes/staffDocuments.js';
-import { assignmentsRouter } from './routes/assignments.js';
-import { portalRouter } from './routes/portal.js';
 import { patientPortalRouter } from './routes/patientPortal.js';
 import { authMiddleware } from './middleware/auth.js';
 import { fail } from './lib/response.js';
@@ -58,8 +56,6 @@ app.use('/api/staff', staffRouter);
 app.use('/api/staff/templates', authMiddleware('staff'), staffTemplatesRouter);
 app.use('/api/staff/assignments', authMiddleware('staff'), staffAssignmentsRouter);
 app.use('/api/staff/documents', authMiddleware('staff'), staffDocumentsRouter);
-app.use('/api/assignments', assignmentsRouter);
-app.use('/api/portal', portalRouter);
 app.use('/api/patient-portal', patientPortalRouter);
 
 app.use((_req, res) => {

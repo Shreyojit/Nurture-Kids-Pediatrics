@@ -139,13 +139,6 @@ export function App() {
           </>
         )}
 
-        <Route path="/:practice/fill/portal/:token" element={<Navigate to="/parent/login" replace />} />
-        <Route path="/:practice/fill/bundle/:token" element={<Navigate to="/parent/login" replace />} />
-        <Route path="/:practice/fill/:token" element={<Navigate to="/parent/login" replace />} />
-        <Route path="/fill/portal/:token" element={<Navigate to="/parent/login" replace />} />
-        <Route path="/fill/bundle/:token" element={<Navigate to="/parent/login" replace />} />
-        <Route path="/fill/:token" element={<Navigate to="/parent/login" replace />} />
-
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
