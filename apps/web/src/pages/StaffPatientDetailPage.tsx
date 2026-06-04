@@ -732,6 +732,9 @@ export function StaffPatientDetailPage({ token }: Props) {
                     <h4 style={{ marginTop: 0 }}>{section.section_key}</h4>
                     <div className="row">
                       {section.fields.map((field) => {
+                        // Unselected radio options have null value — skip them to avoid noise
+                        if (field.field_type === 'radio_option' && !field.answered) return null;
+
                         const draftValue = coerceResponseInputValue(
                           field.field_type,
                           responseDrafts[submission.id]?.[field.field_id] ?? field.value,
