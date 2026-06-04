@@ -128,10 +128,12 @@ jobs:
             # Resolve DB path from .env or fall back to default
             DB_FILE=$(grep -E '^DB_PATH=' /var/app/.env | cut -d= -f2- | tr -d '"' | xargs)
             if [ -z "$DB_FILE" ]; then DB_FILE="/var/app/data/pediform.db"; fi
-            # Clear stale ASQ 48 fields so the seeder re-populates them with the new layout
+            # Clear stale fields so the seeder re-populates them with group_id values
             if command -v sqlite3 >/dev/null 2>&1 && [ -f "$DB_FILE" ]; then
               sqlite3 "$DB_FILE" "DELETE FROM pdf_template_fields WHERE template_id='3761fe08-1151-4f61-8411-75c78332ca2e'; DELETE FROM field_groups WHERE template_id='3761fe08-1151-4f61-8411-75c78332ca2e';"
               echo "Cleared stale ASQ 48 fields from $DB_FILE"
+              sqlite3 "$DB_FILE" "DELETE FROM pdf_template_fields WHERE template_id='d5dc70ff-7d29-4f74-9aea-c387eec9e6c4'; DELETE FROM field_groups WHERE template_id='d5dc70ff-7d29-4f74-9aea-c387eec9e6c4';"
+              echo "Cleared stale ASQ 24 fields from $DB_FILE"
             fi
             pm2 restart pediform-api || pm2 start /var/app/dist/index.js --name pediform-api
             pm2 save
