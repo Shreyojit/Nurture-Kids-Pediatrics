@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { getPatientSession, setPatientSession, type PatientPortalAccess } from '../lib/patientSession';
 function normalizeAccess(raw: Record<string, unknown>): PatientPortalAccess {
@@ -70,7 +70,7 @@ export function ParentLoginPage({ onPatientSession }: Props) {
       const msg = (err as Error).message ?? '';
       if (msg.toLowerCase().includes('no record') || msg.toLowerCase().includes('mismatch')) {
         setError(
-          'We could not find a record with that name and date of birth. Check your spelling, or register as a new patient below.',
+          'We could not find a record with that name and date of birth. Please check your spelling and try again.',
         );
       } else {
         setError(msg || 'Sign-in failed. Please try again.');
@@ -130,14 +130,7 @@ export function ParentLoginPage({ onPatientSession }: Props) {
             </button>
           </form>
 
-          <hr className="divider" />
 
-          <p className="text-muted text-center" style={{ margin: '0 0 12px' }}>
-            <strong>New to our practice?</strong> Register with the same information to start intake.
-          </p>
-          <Link to="/parent/register" className="btn-outline-link">
-            New patient registration
-          </Link>
         </div>
       </div>
     </div>
