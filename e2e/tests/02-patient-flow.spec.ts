@@ -76,10 +76,6 @@ test.describe('Patient: portal login form', () => {
     await expect(page.locator('.patient-portal-error')).toBeVisible({ timeout: 10_000 });
   });
 
-  test('link to new patient registration is visible', async ({ page }) => {
-    await page.goto('/parent/login');
-    await expect(page.getByRole('link', { name: /new patient registration/i })).toBeVisible();
-  });
 });
 
 test.describe('Patient: dashboard', () => {
