@@ -665,6 +665,7 @@ function fixAsqRadioGroups(): void {
     '30684745-8590-471d-b842-e3eb6d5c16cd',  // ASQ-9
     '0428202b-938a-4a88-b422-a58343de4726',  // ASQ-12
     '46a56232-79fd-4bc2-afc0-632de573b214',  // ASQ-18
+    '3761fe08-1151-4f61-8411-75c78332ca2e',  // ASQ-48
   ];
 
   const insertGroup = db.prepare(`
