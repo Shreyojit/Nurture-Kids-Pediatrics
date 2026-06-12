@@ -17,9 +17,9 @@ type Props = {
 
 export function StaffLoginPage({ onAuthenticated }: Props) {
   const navigate = useNavigate();
-  const [practiceName, setPracticeName] = useState('Nurture Kids Pediatrics');
-  const [email, setEmail] = useState('admin@nurturekidspediatrics.com');
-  const [password, setPassword] = useState('Admin@12345');
+  const [practiceName, setPracticeName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
