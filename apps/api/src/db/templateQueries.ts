@@ -109,6 +109,17 @@ export function listPublishedTemplatesForPractice(practiceId: string): Array<Tem
     .all(practiceId) as Array<TemplateRecord>;
 }
 
+/** Returns all non-archived templates (draft + published) for auto-assignment matching. */
+export function listAssignableTemplatesForPractice(practiceId: string): Array<TemplateRecord> {
+  return db
+    .prepare(
+      `select * from pdf_templates
+       where practice_id = ? and status != 'archived'
+       order by template_key asc, version desc`,
+    )
+    .all(practiceId) as Array<TemplateRecord>;
+}
+
 export function createTemplate(input: {
   practiceId: string;
   templateKey: string;

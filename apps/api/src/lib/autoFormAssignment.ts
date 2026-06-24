@@ -1,4 +1,4 @@
-import { listPublishedTemplatesForPractice } from '../db/templateQueries.js';
+import { listAssignableTemplatesForPractice } from '../db/templateQueries.js';
 import { createAssignment, hasActiveAssignmentForPatientTemplate } from '../db/assignmentQueries.js';
 
 export type AgeGroup =
@@ -169,7 +169,7 @@ export function resolveFormLabelsToTemplates(
   labels: string[],
 ): Array<{ id: string; name: string; template_key: string }> {
   if (labels.length === 0) return [];
-  const published = listPublishedTemplatesForPractice(practiceId);
+  const published = listAssignableTemplatesForPractice(practiceId);
   const seen = new Set<string>();
   const matched: Array<{ id: string; name: string; template_key: string }> = [];
   for (const label of labels) {
@@ -193,7 +193,7 @@ export function debugAutoAssign(practiceId: string, childDob: string, visitType:
   const labels = ageGroup ? (AGE_GROUP_FORMS[ageGroup] ?? []) : [];
   const wellVisit = isWellVisit(visitType);
 
-  const published = listPublishedTemplatesForPractice(practiceId);
+  const published = listAssignableTemplatesForPractice(practiceId);
 
   const labelTrace = labels.map((label) => {
     const fragments = FORM_KEY_MAP[label] ?? [label.toLowerCase()];
