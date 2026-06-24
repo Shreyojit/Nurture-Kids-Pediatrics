@@ -19,23 +19,26 @@ export type AgeGroup =
   | '7_11_year'
   | '12_18_year';
 
-/** Form labels per age group for well-visit auto-assignment. */
+/**
+ * Form labels per age group for well-visit auto-assignment.
+ * Labels are the exact template_key values in the database so matching is unambiguous.
+ */
 export const AGE_GROUP_FORMS: Record<AgeGroup, string[]> = {
-  newborn: ['New Patient Paperwork'],
-  '2_week': ['EPDS'],
-  '2_month': ['EPDS'],
-  '4_month': [],
-  '6_month': ['LEAD'],
-  '9_month': ['ASQ', 'LEAD'],
-  '12_month': ['TB', 'LEAD'],
-  '15_month': ['TB', 'LEAD'],
-  '18_month': ['ASQ', 'MCHAT', 'TB', 'LEAD'],
-  '24_month': ['ASQ', 'MCHAT', 'TB', 'LEAD'],
-  '30_month': ['ASQ', 'TB', 'LEAD'],
-  '3_year': ['ASQ', 'TB', 'LEAD'],
-  '4_year': ['ASQ', 'TB', 'LEAD'],
-  '5_6_year': ['TB', 'LEAD'],
-  '7_11_year': ['TB'],
+  newborn:     ['patient_registration'],
+  '2_week':    ['epds'],
+  '2_month':   ['epds'],
+  '4_month':   [],
+  '6_month':   ['lead'],
+  '9_month':   ['ASQ9Mos', 'lead'],
+  '12_month':  ['asq12mos', 'tb', 'lead'],
+  '15_month':  ['tb', 'lead'],
+  '18_month':  ['asq18mos', 'mchat', 'tb', 'lead'],
+  '24_month':  ['asq24mos', 'mchat', 'tb', 'lead'],
+  '30_month':  ['ASQ30', 'tb', 'lead'],
+  '3_year':    ['asq36mos', 'tb', 'lead'],
+  '4_year':    ['asq_48_months', 'tb', 'lead'],
+  '5_6_year':  ['tb', 'lead'],
+  '7_11_year': ['tb'],
   '12_18_year': ['PHQ-9'],
 };
 
@@ -59,15 +62,23 @@ const AGE_MILESTONES: Array<{ group: AgeGroup; months: number }> = [
   { group: '12_18_year', months: 180 },
 ];
 
-/** Keyword fragments that each form label matches against template name/key. */
+/**
+ * Keyword fragments matched against template name/key (case-insensitive substring).
+ * AGE_GROUP_FORMS now uses exact template_key values, so the default fallback
+ * [label.toLowerCase()] resolves most labels directly. Entries here handle labels
+ * whose casing or naming differs from the stored template_key.
+ */
 const FORM_KEY_MAP: Record<string, string[]> = {
-  'New Patient Paperwork': ['registration', 'new_patient', 'paperwork', 'patient_registration'],
-  EPDS: ['epds'],
-  LEAD: ['lead'],
-  ASQ: ['asq'],
-  MCHAT: ['mchat', 'm-chat'],
-  TB: ['_tb', 'tb_', ':tb', ' tb', 'tuberculosis'],
-  'PHQ-9': ['phq'],
+  // Mixed-case ASQ keys whose lowercased label matches the lowercased template_key
+  ASQ9Mos:  ['asq9mos', 'asq9'],
+  asq12mos: ['asq12mos', 'asq12'],
+  asq18mos: ['asq18mos', 'asq18'],
+  asq24mos: ['asq24mos', 'asq24'],
+  ASQ30:    ['asq30'],
+  asq36mos: ['asq36mos', 'asq36'],
+  // asq_48_months falls through to fallback — ['asq_48_months'] matches key exactly
+  // PHQ-9: cover both phq-9 and phq9 template_key variations
+  'PHQ-9':  ['phq'],
 };
 
 /** Raw visit-type phrases from schedule imports that trigger age-based auto-assignment. */
@@ -109,13 +120,27 @@ export function ageInMonths(dob: string, asOf = new Date()): number | null {
 
 /** Map DOB to the nearest well-child age bucket (see AGE_GROUP_FORMS). */
 export function getAgeGroup(dob: string, asOf = new Date()): AgeGroup | null {
+  const birth = parseDobToDate(dob);
+  if (!birth) return null;
+
+  // For infants under 1 month use day-precision so newborn and 2-week are
+  // distinguishable — ageInMonths() returns 0 for both and the milestone
+  // distance for '2_week' (0.5) is always worse than newborn (0).
+  const diffDays = (asOf.getTime() - birth.getTime()) / 86_400_000;
+  if (diffDays >= 0 && diffDays < 30) {
+    return diffDays < 14 ? 'newborn' : '2_week';
+  }
+
   const m = ageInMonths(dob, asOf);
   if (m === null) return null;
   if (m > 216) return '12_18_year';
 
-  let best = AGE_MILESTONES[0];
+  // Skip newborn / 2-week milestones when using month-based matching —
+  // those are already handled by the day-based path above.
+  const monthMilestones = AGE_MILESTONES.filter((ms) => ms.months >= 2);
+  let best = monthMilestones[0];
   let bestDist = Math.abs(m - best.months);
-  for (const milestone of AGE_MILESTONES) {
+  for (const milestone of monthMilestones) {
     const dist = Math.abs(m - milestone.months);
     if (dist < bestDist) {
       bestDist = dist;
@@ -157,6 +182,41 @@ export function resolveFormLabelsToTemplates(
     }
   }
   return matched;
+}
+
+/** Full diagnostic trace of the auto-assign algorithm for a single patient DOB + practiceId. */
+export function debugAutoAssign(practiceId: string, childDob: string, visitType: string | null) {
+  const birth = parseDobToDate(childDob);
+  const diffDays = birth ? (new Date().getTime() - birth.getTime()) / 86_400_000 : null;
+  const ageMonths = ageInMonths(childDob);
+  const ageGroup = getAgeGroup(childDob);
+  const labels = ageGroup ? (AGE_GROUP_FORMS[ageGroup] ?? []) : [];
+  const wellVisit = isWellVisit(visitType);
+
+  const published = listPublishedTemplatesForPractice(practiceId);
+
+  const labelTrace = labels.map((label) => {
+    const fragments = FORM_KEY_MAP[label] ?? [label.toLowerCase()];
+    const candidates = published.map((p) => {
+      const nameLower = String(p.name).toLowerCase();
+      const keyLower = String(p.template_key).toLowerCase();
+      const hit = fragments.find((f) => nameLower.includes(f) || keyLower.includes(f));
+      return { id: p.id, name: p.name, key: p.template_key, matched: !!hit, matched_fragment: hit ?? null };
+    });
+    const winner = candidates.find((c) => c.matched) ?? null;
+    return { label, fragments, winner, all_candidates: candidates };
+  });
+
+  return {
+    input: { childDob, visitType, practiceId },
+    computed: { diffDays, ageMonths, ageGroup, isWellVisit: wellVisit },
+    age_group_forms: labels,
+    published_template_count: published.length,
+    published_templates: published.map((p) => ({ id: p.id, name: p.name, key: p.template_key, status: p.status })),
+    label_trace: labelTrace,
+    would_assign: wellVisit ? labelTrace.filter((l) => l.winner).map((l) => ({ label: l.label, template: l.winner })) : [],
+    blocked_by_visit_type: !wellVisit,
+  };
 }
 
 export type AutoAssignResult = {

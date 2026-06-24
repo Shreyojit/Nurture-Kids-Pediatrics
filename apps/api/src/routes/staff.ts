@@ -19,6 +19,7 @@ import {
   getSubmissionById,
   getStaffByEmail,
   bulkImportPatientsFromExcelRows,
+  deletePatientCascade,
   listPatients,
   listSubmissions,
   expireStaleSubmissions,
@@ -431,6 +432,16 @@ staffRouter.get('/patients/:id', (req, res) => {
     return;
   }
   ok(res, detail);
+});
+
+/** DELETE /api/staff/patients/:id — permanently remove a patient and all their records. */
+staffRouter.delete('/patients/:id', (req, res) => {
+  const deleted = deletePatientCascade(req.params.id, req.user!.practiceId);
+  if (!deleted) {
+    fail(res, 'NOT_FOUND', 'Patient not found', 404);
+    return;
+  }
+  ok(res, { deleted: true });
 });
 
 function practiceSlug(practiceId: string): string {

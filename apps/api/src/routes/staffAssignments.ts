@@ -10,7 +10,7 @@ import {
 } from '../db/assignmentQueries.js';
 import { createBundleWithAssignments } from '../db/bundleQueries.js';
 import { getLatestAppointmentVisitTypeRaw } from '../db/queries.js';
-import { autoAssignForWellVisit } from '../lib/autoFormAssignment.js';
+import { autoAssignForWellVisit, debugAutoAssign } from '../lib/autoFormAssignment.js';
 import { db, nowIso } from '../db/database.js';
 
 export const staffAssignmentsRouter = Router();
@@ -128,6 +128,24 @@ staffAssignmentsRouter.get('/patient/:patientId', (req, res) => {
 
 const autoAssignSchema = z.object({
   expires_in_days: z.number().int().min(1).max(90).optional(),
+});
+
+/** Debug: trace the full auto-assign algorithm for a patient without writing to DB. */
+staffAssignmentsRouter.get('/patient/:patientId/auto-assign-debug', (req, res) => {
+  const auth = req.user as { id: string; practiceId: string };
+
+  const patient = db
+    .prepare('select id, child_dob, visit_type from patients where id = ? and practice_id = ?')
+    .get(req.params.patientId, auth.practiceId) as
+    | { id: string; child_dob: string; visit_type: string }
+    | undefined;
+
+  if (!patient) { fail(res, 'NOT_FOUND', 'Patient not found', 404); return; }
+
+  const apptVisit = getLatestAppointmentVisitTypeRaw(patient.id);
+  const visitType = apptVisit ?? patient.visit_type;
+
+  ok(res, debugAutoAssign(auth.practiceId, patient.child_dob, visitType));
 });
 
 /** Age-based auto-assignment for well / preventive visits (DOB + visit type). */

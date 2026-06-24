@@ -14,7 +14,11 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
   dbPath: process.env.DB_PATH ?? path.join(dataPath, 'pediform.db'),
-  corsOrigin: process.env.CORS_ORIGIN ?? '*',
+  // Accepts a comma-separated list of origins: "https://a.com,https://b.com"
+  // Falls back to '*' (allow all) when the env var is not set.
+  corsOrigin: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+    : '*',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID ?? '',

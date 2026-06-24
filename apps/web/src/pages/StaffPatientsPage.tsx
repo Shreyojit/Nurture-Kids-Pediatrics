@@ -109,6 +109,28 @@ export function StaffPatientsPage({ token }: Props) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ── Delete patient ────────────────────────────────────────────────────────
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDeletePatient = patients.find((p) => p.id === confirmDeleteId) ?? null;
+
+  function handleDeleteConfirm() {
+    if (!confirmDeleteId || !token) return;
+    setDeleting(true);
+    fetch(`/api/staff/patients/${confirmDeleteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error('Delete failed');
+        setPatients((prev) => prev.filter((p) => p.id !== confirmDeleteId));
+        setConfirmDeleteId(null);
+      })
+      .catch(() => setError('Failed to delete patient. Please try again.'))
+      .finally(() => setDeleting(false));
+  }
+
   // ── Filters ──────────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [filterVisit, setFilterVisit] = useState('');
@@ -509,6 +531,56 @@ export function StaffPatientsPage({ token }: Props) {
 
         {error ? <div className="error">{error}</div> : null}
 
+        {/* ── Delete confirm modal ── */}
+        {confirmDeletePatient && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+            }}
+            onClick={() => !deleting && setConfirmDeleteId(null)}
+          >
+            <div
+              style={{
+                background: '#fff', borderRadius: 12, padding: '28px 32px', maxWidth: 420, width: '90%',
+                boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 700 }}>Delete patient?</h3>
+              <p style={{ margin: '0 0 20px', color: '#4b5563', fontSize: 14, lineHeight: 1.5 }}>
+                This will permanently delete{' '}
+                <strong>
+                  {confirmDeletePatient.child_first_name} {confirmDeletePatient.child_last_name}
+                </strong>
+                {confirmDeletePatient.patient_acct_no ? ` (Chart #${confirmDeletePatient.patient_acct_no})` : ''}
+                {' '}and all their records — submissions, assignments, appointments, and portal account. This cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  disabled={deleting}
+                  onClick={() => setConfirmDeleteId(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDeleteConfirm}
+                  style={{
+                    background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6,
+                    padding: '6px 16px', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Yes, delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Table ── */}
         <div style={{ overflowX: 'auto', marginTop: 8 }}>
           <table className="table">
@@ -585,10 +657,29 @@ export function StaffPatientsPage({ token }: Props) {
                       <span style={{ color: '#bbb' }}>None</span>
                     )}
                   </td>
-                  <td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     <Link to={`/staff/patients/${patient.id}`} className="btn-ghost btn-sm">
                       View
                     </Link>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(patient.id)}
+                      title="Delete patient"
+                      style={{
+                        marginLeft: 6,
+                        background: 'transparent',
+                        border: '1px solid #fca5a5',
+                        borderRadius: 5,
+                        color: '#dc2626',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        padding: '3px 8px',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

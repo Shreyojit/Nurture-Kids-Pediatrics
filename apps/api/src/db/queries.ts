@@ -1518,3 +1518,55 @@ export function expireStaleSubmissions(olderThanHours = 48): number {
     .run(nowIso(), olderThanHours);
   return result.changes as number;
 }
+
+/** Permanently delete a patient and all related records in a single transaction. */
+export function deletePatientCascade(patientId: string, practiceId: string): boolean {
+  const patient = db
+    .prepare('select id, account_id from patients where id = ? and practice_id = ?')
+    .get(patientId, practiceId) as { id: string; account_id: string | null } | undefined;
+  if (!patient) return false;
+
+  db.transaction(() => {
+    // grandchild tables first
+    db.prepare(
+      'delete from submission_events where submission_id in (select id from submissions where patient_id = ?)',
+    ).run(patientId);
+    db.prepare(
+      'delete from asq_submission_values where submission_id in (select id from asq_submissions where patient_id = ?)',
+    ).run(patientId);
+
+    // all tables with a direct patient_id column
+    const directTables = [
+      'asq_submissions',
+      'patient_documents',
+      'form_assignments',
+      'assignment_bundles',
+      'submissions',
+      'appointments',
+      'consents_signatures',
+      'provider_preferences',
+      'social_history',
+      'family_history',
+      'immunizations',
+      'medications',
+      'allergies',
+      'concerns',
+      'medical_history',
+      'pharmacies',
+      'insurance_policies',
+      'guardians',
+    ];
+    for (const table of directTables) {
+      db.prepare(`delete from ${table} where patient_id = ?`).run(patientId);
+    }
+
+    db.prepare('delete from patients where id = ?').run(patientId);
+
+    // delete the linked parent-portal account if the patient had one
+    if (patient.account_id) {
+      db.prepare('delete from patient_accounts where id = ?').run(patient.account_id);
+    }
+  })();
+
+  return true;
+}

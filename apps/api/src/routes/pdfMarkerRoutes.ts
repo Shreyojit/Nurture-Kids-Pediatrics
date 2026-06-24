@@ -482,11 +482,23 @@ pdfMarkerRouter.post('/:id/generate-filled', async (req, res) => {
 
       try {
         if (field.field_type === 'radio') {
-          const r = Math.max(1, Math.min(fw, fh) / 2 - 1);
+          // Minimum 4pt radius so the filled circle is always visible in the PDF
+          const r = Math.max(4, Math.min(fw, fh) / 2 - 1);
           page.drawEllipse({ x: fx + fw / 2, y: fy + fh / 2, xScale: r, yScale: r, color: rgb(0, 0, 0) });
         } else if (field.field_type === 'checkbox') {
+          // Enforce minimum 10pt box so checkboxes are always readable
+          const MIN_CB = 10;
+          const cbSize = Math.max(MIN_CB, Math.min(fw, fh));
+          const cbX = fx + (fw - cbSize) / 2;
+          const cbY = fy + (fh - cbSize) / 2;
+          // Box outline (always drawn so unchecked boxes are visible in the PDF)
+          page.drawRectangle({ x: cbX, y: cbY, width: cbSize, height: cbSize, borderColor: rgb(0, 0, 0), borderWidth: 1 });
           if (value === 'checked') {
-            page.drawText('X', { x: fx + 1, y: fy + 1, size: Math.min(fs_ + 2, Math.min(fw, fh) - 2), font, color: rgb(0, 0, 0) });
+            // Draw an X inside the box using two diagonal lines
+            const pad = Math.max(1.5, cbSize * 0.15);
+            const thickness = Math.max(1, cbSize / 10);
+            page.drawLine({ start: { x: cbX + pad, y: cbY + pad }, end: { x: cbX + cbSize - pad, y: cbY + cbSize - pad }, thickness, color: rgb(0, 0, 0) });
+            page.drawLine({ start: { x: cbX + pad, y: cbY + cbSize - pad }, end: { x: cbX + cbSize - pad, y: cbY + pad }, thickness, color: rgb(0, 0, 0) });
           }
         } else {
           const lines = String(value).split('\n');

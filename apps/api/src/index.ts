@@ -40,7 +40,10 @@ setInterval(() => expireStaleAssignments(), 6 * 60 * 60 * 1000);
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors({
+  origin: config.corsOrigin,
+  credentials: true,
+}));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 
