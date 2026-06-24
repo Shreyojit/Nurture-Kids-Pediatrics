@@ -16,6 +16,8 @@ import { staffTemplatesRouter } from './routes/staffTemplates.js';
 import { staffAssignmentsRouter } from './routes/staffAssignments.js';
 import { staffDocumentsRouter } from './routes/staffDocuments.js';
 import { patientPortalRouter } from './routes/patientPortal.js';
+import { asqStaffRouter, asqPublicRouter } from './routes/asqRoutes.js';
+import { pdfMarkerRouter } from './routes/pdfMarkerRoutes.js';
 import { authMiddleware } from './middleware/auth.js';
 import { fail } from './lib/response.js';
 import { expireStaleAssignments } from './db/assignmentQueries.js';
@@ -57,6 +59,9 @@ app.use('/api/staff/templates', authMiddleware('staff'), staffTemplatesRouter);
 app.use('/api/staff/assignments', authMiddleware('staff'), staffAssignmentsRouter);
 app.use('/api/staff/documents', authMiddleware('staff'), staffDocumentsRouter);
 app.use('/api/patient-portal', patientPortalRouter);
+app.use('/api/staff/asq', asqStaffRouter);
+app.use('/api/asq/submissions', asqPublicRouter);
+app.use('/api/staff/pdf-marker', authMiddleware('staff'), pdfMarkerRouter);
 
 app.use((_req, res) => {
   fail(res, 'NOT_FOUND', 'Route not found', 404);

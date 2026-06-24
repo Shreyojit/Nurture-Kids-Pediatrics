@@ -359,6 +359,8 @@ export function runMigrations(): void {
   ensurePatientDocumentsTable();
   ensureOrgLocationHierarchy();
   ensureFacilityGroupName();
+  ensureAsqTables();
+  ensureMarkerColumns();
 }
 
 function renameSunshinePractice(): void {
@@ -795,5 +797,121 @@ function ensureFacilityGroupName(): void {
     create index if not exists idx_practices_facility_group
       on practices(organization_id, facility_group_name)
       where facility_group_name is not null;
+  `);
+}
+
+// ─── Generic PDF Marker columns (extends existing pdf_template_fields) ────────
+
+function ensureMarkerColumns(): void {
+  const fieldCols = db.prepare(`pragma table_info(pdf_template_fields)`).all() as Array<{ name: string }>;
+  const fc = new Set(fieldCols.map((r) => r.name));
+
+  const addField = (col: string, ddl: string) => {
+    if (!fc.has(col)) { db.exec(`alter table pdf_template_fields add column ${ddl}`); fc.add(col); }
+  };
+
+  addField('x_percent',     'x_percent real default 0');
+  addField('y_percent',     'y_percent real default 0');
+  addField('width_percent', 'width_percent real default 10');
+  addField('height_percent','height_percent real default 3');
+  addField('radio_group',   'radio_group text');
+  addField('radio_value',   'radio_value text');
+  addField('field_label',   'field_label text');
+  addField('placeholder',   'placeholder text');
+  addField('default_value', 'default_value text');
+
+  const tmplCols = db.prepare(`pragma table_info(pdf_templates)`).all() as Array<{ name: string }>;
+  const tc = new Set(tmplCols.map((r) => r.name));
+
+  if (!tc.has('is_marker_template')) {
+    db.exec(`alter table pdf_templates add column is_marker_template integer not null default 0`);
+  }
+  if (!tc.has('page_count')) {
+    db.exec(`alter table pdf_templates add column page_count integer`);
+  }
+}
+
+// ─── ASQ-3 PDF marker / fill / scoring tables ─────────────────────────────
+
+export function ensureAsqTables(): void {
+  db.exec(`
+    create table if not exists asq_templates (
+      id text primary key,
+      practice_id text not null,
+      name text not null,
+      template_type text not null default 'ASQ_48',
+      version integer not null default 1,
+      original_file_name text not null,
+      stored_file_name text not null,
+      file_path text not null,
+      created_by text,
+      created_at text not null,
+      updated_at text not null,
+      foreign key(practice_id) references practices(id)
+    );
+
+    create index if not exists idx_asq_templates_practice
+      on asq_templates(practice_id);
+
+    create table if not exists asq_template_fields (
+      id text primary key,
+      template_id text not null,
+      field_name text not null,
+      field_key text not null,
+      field_type text not null,
+      page_number integer not null default 1,
+      x_percent real not null default 0,
+      y_percent real not null default 0,
+      width_percent real not null default 10,
+      height_percent real not null default 3,
+      group_name text,
+      option_value text,
+      required integer not null default 0,
+      sort_order integer not null default 0,
+      created_at text not null,
+      updated_at text not null,
+      foreign key(template_id) references asq_templates(id)
+    );
+
+    create index if not exists idx_asq_template_fields_template
+      on asq_template_fields(template_id);
+
+    create table if not exists asq_submissions (
+      id text primary key,
+      template_id text not null,
+      patient_id text,
+      practice_id text not null,
+      status text not null default 'in_progress',
+      communication_total real,
+      gross_motor_total real,
+      fine_motor_total real,
+      problem_solving_total real,
+      personal_social_total real,
+      generated_pdf_path text,
+      created_at text not null,
+      updated_at text not null,
+      foreign key(template_id) references asq_templates(id),
+      foreign key(practice_id) references practices(id)
+    );
+
+    create index if not exists idx_asq_submissions_template
+      on asq_submissions(template_id);
+    create index if not exists idx_asq_submissions_practice
+      on asq_submissions(practice_id);
+
+    create table if not exists asq_submission_values (
+      id text primary key,
+      submission_id text not null,
+      field_id text not null,
+      field_key text not null,
+      value text not null,
+      created_at text not null,
+      updated_at text not null,
+      unique(submission_id, field_key),
+      foreign key(submission_id) references asq_submissions(id)
+    );
+
+    create index if not exists idx_asq_submission_values_submission
+      on asq_submission_values(submission_id);
   `);
 }

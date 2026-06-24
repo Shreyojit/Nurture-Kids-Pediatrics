@@ -26,6 +26,13 @@ import { StaffAssignmentsPage } from './pages/StaffAssignmentsPage';
 import { StaffSubmissionsPage } from './pages/StaffSubmissionsPage';
 import { StaffTemplateEditorPage } from './pages/StaffTemplateEditorPage';
 import { StaffTemplatesPage } from './pages/StaffTemplatesPage';
+import { ASQTemplateDashboard } from './pages/ASQTemplateDashboard';
+import { ASQTemplateBuilder } from './pages/ASQTemplateBuilder';
+import { ASQFormFillPage } from './pages/ASQFormFillPage';
+import { ASQSubmissionView } from './pages/ASQSubmissionView';
+import { PdfMarkerDashboard } from './pages/PdfMarkerDashboard';
+import { PdfMarkerBuilder } from './pages/PdfMarkerBuilder';
+import { PdfMarkerFillPage } from './pages/PdfMarkerFillPage';
 import { useEffect, useState } from 'react';
 
 // VITE_APP_MODE: 'admin' | 'patient' | undefined (both)
@@ -136,6 +143,16 @@ export function App() {
             <Route path="/staff/patients/:id" element={<StaffPatientDetailPage token={staffSession?.token ?? null} />} />
             <Route path="/staff/templates" element={<StaffTemplatesPage token={staffSession?.token ?? null} />} />
             <Route path="/staff/templates/:id/editor" element={<StaffTemplateEditorPage token={staffSession?.token ?? null} />} />
+            {/* ASQ-3 module */}
+            <Route path="/staff/asq" element={<ASQTemplateDashboard token={staffSession?.token ?? null} />} />
+            <Route path="/staff/asq/:id/builder" element={<ASQTemplateBuilder />} />
+            <Route path="/staff/asq/:templateId/fill" element={<ASQFormFillPage />} />
+            <Route path="/staff/asq/:templateId/fill/:submissionId" element={<ASQFormFillPage />} />
+            <Route path="/staff/asq/submissions/:submissionId" element={<ASQSubmissionView />} />
+            {/* Generic PDF Form Builder */}
+            <Route path="/staff/pdf-builder" element={<PdfMarkerDashboard />} />
+            <Route path="/staff/pdf-builder/:id/builder" element={<PdfMarkerBuilder />} />
+            <Route path="/staff/pdf-builder/:id/fill" element={<PdfMarkerFillPage />} />
           </>
         )}
 

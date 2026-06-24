@@ -232,6 +232,13 @@ a:hover {
 }
 
 /* ── Cards ── */
+.card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 12px;
+}
+
 .card {
   background: var(--color-surface);
   border-radius: var(--radius-lg);
@@ -407,6 +414,79 @@ button.btn-sm {
 
 button.btn-inline {
   width: auto;
+}
+
+/* Generic .btn class for <a> tags and non-button elements styled as buttons */
+.btn,
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  min-height: 36px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  width: auto;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  min-height: 30px;
+  font-size: 13px;
+}
+
+.btn-primary,
+a.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover,
+a.btn-primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  text-decoration: none;
+}
+
+.btn-danger,
+a.btn-danger,
+button.btn-danger {
+  background: var(--color-error);
+  color: #fff;
+  border-color: var(--color-error);
+}
+
+.btn-danger:hover:not(:disabled),
+a.btn-danger:hover,
+button.btn-danger:hover:not(:disabled) {
+  background: #991b1b;
+  border-color: #991b1b;
+  text-decoration: none;
+}
+
+.btn-outline,
+a.btn-outline,
+button.btn-outline {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1.5px solid var(--color-primary);
+}
+
+.btn-outline:hover:not(:disabled),
+a.btn-outline:hover,
+button.btn-outline:hover:not(:disabled) {
+  background: var(--color-primary-soft);
+  text-decoration: none;
 }
 
 /* Link styled as outline button */

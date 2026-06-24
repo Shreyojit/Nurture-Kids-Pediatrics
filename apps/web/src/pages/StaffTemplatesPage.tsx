@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
 import { formatAcroformReady, formatTemplateStatus } from '../lib/staffLabels';
 
@@ -14,11 +14,15 @@ type TemplateRow = {
   name: string;
   status: 'draft' | 'published' | 'archived';
   acroform_pdf_path: string | null;
+  is_marker_template: number; // 1 = PDF Builder form, 0 = AcroForm
   created_at: string;
 };
 
 export function StaffTemplatesPage({ token }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Show a banner if we were redirected here from the PDF Builder publish flow
+  const justPublished = new URLSearchParams(location.search).get('published') === '1';
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -192,6 +196,15 @@ export function StaffTemplatesPage({ token }: Props) {
           </p>
         ) : null}
 
+        {justPublished && (
+          <div style={{
+            marginBottom: 12, padding: '10px 14px', borderRadius: 6,
+            background: '#d1fae5', border: '1px solid #6ee7b7', fontSize: 13, color: '#065f46',
+          }}>
+            Form published and now available for assignment.
+          </div>
+        )}
+
         {templates.length > 0 ? (
           <table className="table">
             <thead>
@@ -205,19 +218,40 @@ export function StaffTemplatesPage({ token }: Props) {
               </tr>
             </thead>
             <tbody>
-              {templates.map((template) => (
+              {templates.map((template) => {
+                const isMarker = template.is_marker_template === 1;
+                return (
                 <tr key={template.id}>
                   <td>
                     <strong>{template.name}</strong>
-                    <div style={{ fontSize: 12 }}>{template.template_key}</div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                      {template.template_key}
+                      {isMarker && (
+                        <span style={{
+                          marginLeft: 6, fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+                          background: '#ede9fe', color: '#6d28d9',
+                          padding: '1px 6px', borderRadius: 10,
+                        }}>
+                          PDF Builder
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td>v{template.version}</td>
                   <td>
                     <span className="badge">{formatTemplateStatus(template.status)}</span>
                   </td>
-                  <td>{formatAcroformReady(!!template.acroform_pdf_path)}</td>
                   <td>
-                    <Link to={`/staff/templates/${template.id}/editor`}>Edit fields</Link>
+                    {isMarker
+                      ? <span style={{ fontSize: 13, color: '#059669', fontWeight: 600 }}>Visual markers</span>
+                      : formatAcroformReady(!!template.acroform_pdf_path)
+                    }
+                  </td>
+                  <td>
+                    {isMarker
+                      ? <Link to={`/staff/pdf-builder/${template.id}/builder`}>Open PDF Builder</Link>
+                      : <Link to={`/staff/templates/${template.id}/editor`}>Edit fields</Link>
+                    }
                   </td>
                   <td>
                     <button
@@ -259,7 +293,8 @@ export function StaffTemplatesPage({ token }: Props) {
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         ) : null}

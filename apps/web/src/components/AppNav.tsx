@@ -103,6 +103,8 @@ export function AppNav({ staffSession, patientSession, onLogout, appMode }: Prop
                 <Link to="/staff/assignments">Sent Forms</Link>
                 <Link to="/staff/submissions">Completed Forms</Link>
                 <Link to="/staff/templates">Form Builder</Link>
+                <Link to="/staff/asq">ASQ Forms</Link>
+                <Link to="/staff/pdf-builder">PDF Builder</Link>
                 <a
                   href="#logout"
                   onClick={(e) => {
