@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import fs from 'node:fs';
@@ -39,19 +38,25 @@ setInterval(() => expireStaleAssignments(), 6 * 60 * 60 * 1000);
 
 const app = express();
 
-const corsOptions = {
-  origin: config.corsOrigin,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-};
-
-// Handle preflight OPTIONS before any other middleware (including helmet)
-app.options('*', cors(corsOptions));
-app.use(cors(corsOptions));
+// Raw CORS middleware — runs before everything including helmet.
+// Reflects the request Origin back so any frontend domain works.
+// Auth security is provided by JWT Bearer tokens, not same-origin policy.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', origin ?? '*');
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
 
 app.use(helmet({
-  // API is consumed cross-origin; these defaults block legitimate requests
   crossOriginResourcePolicy: false,
   crossOriginOpenerPolicy: false,
 }));
