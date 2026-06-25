@@ -16,6 +16,11 @@ export type TemplateField = {
   y?: number;
   width?: number;
   height?: number;
+  /** Visual Markers (PDF Builder) fields use percentage coordinates instead of absolute */
+  x_percent?: number;
+  y_percent?: number;
+  width_percent?: number;
+  height_percent?: number;
 };
 
 export type FieldGroup = {
@@ -71,6 +76,7 @@ export type FormTemplate = {
   acroform_ready?: boolean;
   pdf_overlay_ready?: boolean;
   field_schema?: TemplateFieldSchema;
+  is_marker_template?: boolean;
   visit_type?: string;
   form_type?: string;
   languages?: string[];

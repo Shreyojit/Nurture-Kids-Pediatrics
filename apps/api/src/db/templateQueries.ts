@@ -84,6 +84,8 @@ export type TemplateRecord = {
   acroform_pdf_path: string | null;
   field_schema_json?: string;
   status: TemplateStatus;
+  is_marker_template?: number;
+  page_count?: number | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

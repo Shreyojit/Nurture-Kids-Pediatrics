@@ -9,6 +9,7 @@ import { loadTemplate } from '../lib/templateLoader.js';
 import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
 import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
 import { parseJson } from '../db/database.js';
@@ -48,10 +49,14 @@ type DynamicTemplateField = {
   group_value: string | null;
   parent_field_id: string | null;
   page_number: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  x_percent?: number;
+  y_percent?: number;
+  width_percent?: number;
+  height_percent?: number;
 };
 
 type DynamicTemplateStep = {
@@ -74,6 +79,7 @@ function normalizeFieldType(fieldType: string): string {
 }
 
 function mapTemplateForPatient(template: Record<string, unknown>) {
+  const isMarker = Boolean(template.is_marker_template);
   const sourceFields = Array.isArray(template.fields) ? (template.fields as Array<Record<string, unknown>>) : [];
   const sourceGroups = Array.isArray(template.groups) ? template.groups : [];
   const stepMap = new Map<string, DynamicTemplateStep>();
@@ -103,23 +109,44 @@ function mapTemplateForPatient(template: Record<string, unknown>) {
     const label_es =
       typeof labelEsRaw === 'string' && labelEsRaw.trim() ? String(labelEsRaw).trim() : undefined;
 
+    const rawType = String(field.field_type ?? 'text');
+    // Visual Markers radio fields → map to 'radio_option' so renderField handles them correctly
+    const inputType = isMarker && rawType === 'radio'
+      ? 'radio_option'
+      : normalizeFieldType(rawType);
+
+    // Visual Markers radio fields use radio_group/radio_value for grouping (not FK group_id)
+    const groupId = isMarker && rawType === 'radio'
+      ? (field.radio_group ? String(field.radio_group) : null)
+      : (field.group_id ? String(field.group_id) : null);
+    const groupValue = isMarker && rawType === 'radio'
+      ? (field.radio_value ? String(field.radio_value) : null)
+      : (field.group_value ? String(field.group_value) : null);
+
     step.fields.push({
-      field_id: String(field.field_id ?? ''),
-      label: String(field.field_name ?? ''),
+      field_id: fieldId,
+      label: String(field.field_name ?? field.field_label ?? ''),
       ...(label_es ? { label_es } : {}),
-      input_type: normalizeFieldType(String(field.field_type ?? 'text')),
+      input_type: inputType,
       required: Boolean(field.required),
       options,
       validation_rules: validation,
-      font_size: Number(field.font_size ?? 12),
-      group_id: field.group_id ? String(field.group_id) : null,
-      group_value: field.group_value ? String(field.group_value) : null,
+      font_size: Number(field.font_size ?? (isMarker ? 10 : 12)),
+      group_id: groupId,
+      group_value: groupValue,
       parent_field_id: field.parent_field_id ? String(field.parent_field_id) : null,
       page_number: Number(field.page_number ?? 1),
-      x: Number(field.x ?? 0),
-      y: Number(field.y ?? 0),
-      width: Number(field.width ?? 120),
-      height: Number(field.height ?? 18),
+      ...(isMarker ? {
+        x_percent: Number(field.x_percent ?? 0),
+        y_percent: Number(field.y_percent ?? 0),
+        width_percent: Number(field.width_percent ?? 20),
+        height_percent: Number(field.height_percent ?? 4),
+      } : {
+        x: Number(field.x ?? 0),
+        y: Number(field.y ?? 0),
+        width: Number(field.width ?? 120),
+        height: Number(field.height ?? 18),
+      }),
     });
   }
 
@@ -138,6 +165,7 @@ function mapTemplateForPatient(template: Record<string, unknown>) {
     version: String(template.version ?? ''),
     title: String(template.name ?? 'Patient Registration'),
     ...(isMchat ? { field_schema, pdf_overlay_ready } : {}),
+    is_marker_template: isMarker,
     steps: (() => {
       const steps = Array.from(stepMap.values());
       if (
@@ -520,6 +548,93 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
         const absoluteCompleted = path.join(submissionsDir, `${safeName}_${safeTemplateKey}_completed.pdf`);
         fs.writeFileSync(absoluteCompleted, Buffer.from(pdfBytes));
         completedPdfPath = toRelativeDataPath(absoluteCompleted);
+      }
+    } else if (templateContext?.template.is_marker_template && templateContext.template.source_pdf_path) {
+      // Visual Markers template — fill using percentage-coordinate overlay
+      type MarkerField = {
+        field_id: string;
+        field_type: string;
+        page_number: number;
+        x_percent: number;
+        y_percent: number;
+        width_percent: number;
+        height_percent: number;
+        radio_group: string | null;
+        radio_value: string | null;
+        font_size: number | null;
+      };
+      const markerFields = templateContext.fields as MarkerField[];
+      const sourcePath = resolveDataPath(templateContext.template.source_pdf_path);
+      if (fs.existsSync(sourcePath)) {
+        const srcBytes = fs.readFileSync(sourcePath);
+        const pdfDocMarker = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+        try { pdfDocMarker.getForm().flatten(); } catch { /* no AcroForm — fine */ }
+        const markerFont = await pdfDocMarker.embedFont(StandardFonts.Helvetica);
+        const pdfPages = pdfDocMarker.getPages();
+
+        for (const mf of markerFields) {
+          const page = pdfPages[mf.page_number - 1];
+          if (!page) continue;
+          const { width: pw, height: ph } = page.getSize();
+          const fx = (mf.x_percent / 100) * pw;
+          const fh = (mf.height_percent / 100) * ph;
+          const fy = ph - (mf.y_percent / 100) * ph - fh;
+          const fw = (mf.width_percent / 100) * pw;
+          const fontSize_ = Math.max(6, mf.font_size ?? 10);
+
+          let fieldValue: string | undefined;
+          if (mf.field_type === 'radio' && mf.radio_group) {
+            // Frontend stores radio responses as __group_${radio_group} = radio_value
+            const radioResp = String(responseMap[`__group_${mf.radio_group}`] ?? '');
+            if (radioResp !== mf.radio_value) continue;
+            fieldValue = mf.radio_value ?? undefined;
+          } else {
+            const raw = responseMap[mf.field_id];
+            fieldValue = raw != null ? String(raw) : undefined;
+          }
+          if (!fieldValue) continue;
+
+          try {
+            if (mf.field_type === 'radio') {
+              const r = Math.max(4, Math.min(fw, fh) / 2 - 1);
+              page.drawEllipse({ x: fx + fw / 2, y: fy + fh / 2, xScale: r, yScale: r, color: rgb(0, 0, 0) });
+            } else if (mf.field_type === 'checkbox') {
+              const MIN_CB = 10;
+              const cbSize = Math.max(MIN_CB, Math.min(fw, fh));
+              const cbX = fx + (fw - cbSize) / 2;
+              const cbY = fy + (fh - cbSize) / 2;
+              page.drawRectangle({ x: cbX, y: cbY, width: cbSize, height: cbSize, borderColor: rgb(0, 0, 0), borderWidth: 1 });
+              if (fieldValue === 'checked') {
+                const pad = Math.max(1.5, cbSize * 0.15);
+                const thickness = Math.max(1, cbSize / 10);
+                page.drawLine({ start: { x: cbX + pad, y: cbY + pad }, end: { x: cbX + cbSize - pad, y: cbY + cbSize - pad }, thickness, color: rgb(0, 0, 0) });
+                page.drawLine({ start: { x: cbX + pad, y: cbY + cbSize - pad }, end: { x: cbX + cbSize - pad, y: cbY + pad }, thickness, color: rgb(0, 0, 0) });
+              }
+            } else {
+              const lines = String(fieldValue).split('\n');
+              const lineH = fontSize_ * 1.25;
+              let ly = fy + fh - fontSize_ - 2;
+              for (const line of lines) {
+                if (ly < fy) break;
+                page.drawText(line.slice(0, 300), { x: fx + 2, y: ly, size: fontSize_, font: markerFont, maxWidth: Math.max(1, fw - 4), color: rgb(0, 0, 0) });
+                ly -= lineH;
+              }
+            }
+          } catch { /* skip fields that fail to render */ }
+        }
+
+        const filledMarker = await pdfDocMarker.save();
+        const formMarker = parseJson<Record<string, unknown>>(submission.form_data_json, {});
+        const childMarker = (formMarker.patient as Record<string, unknown> | undefined)?.child as Record<string, unknown> | undefined;
+        const firstNameM = String(childMarker?.first_name ?? 'patient');
+        const lastNameM = String(childMarker?.last_name ?? 'unknown');
+        const safeNameM = `${firstNameM}_${lastNameM}`.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
+        const safeKeyM = String(templateContext.template.template_key || 'form').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
+        const submissionsDirM = path.join(config.dataPath, 'submissions', submission.id);
+        fs.mkdirSync(submissionsDirM, { recursive: true });
+        const absCompletedM = path.join(submissionsDirM, `${safeNameM}_${safeKeyM}_completed.pdf`);
+        fs.writeFileSync(absCompletedM, Buffer.from(filledMarker));
+        completedPdfPath = toRelativeDataPath(absCompletedM);
       }
     } else if (templateContext?.template.acroform_pdf_path) {
       const templateWithGroups = getTemplateWithFields(templateContext.template.id, templateContext.template.practice_id) as Record<string, unknown>;

@@ -21,7 +21,7 @@ export function ParentOverviewPage() {
       // Non-MCHAT: gate on form_id, not visit_type (commit 106f492)
       if (t.form_id === 'patient_registration') {
         navigate(`/p/${slug}/session/${sessionId}/form/${t.form_id}/step/1`, { replace: true });
-      } else if (t.acroform_ready) {
+      } else if (t.acroform_ready || t.is_marker_template) {
         navigate(`/p/${slug}/session/${sessionId}/pdf-form`, { replace: true });
       } else {
         setTemplate(t);

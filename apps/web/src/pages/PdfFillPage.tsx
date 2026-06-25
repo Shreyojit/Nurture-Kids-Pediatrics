@@ -128,11 +128,21 @@ function renderField(
   allFields: TemplateField[],
   boxInputRefs: React.MutableRefObject<Map<string, HTMLInputElement>>,
 ): React.ReactNode {
-  // Convert PDF coordinates (origin bottom-left) to CSS (origin top-left)
-  const cssLeft = (field.x ?? 0) * scale;
-  const cssTop = pageH - ((field.y ?? 0) + (field.height ?? 18)) * scale;
-  const cssW = (field.width ?? 120) * scale;
-  const cssH = (field.height ?? 18) * scale;
+  // Visual Markers fields: percentage coordinates (y from top, CSS-style)
+  // AcroForm fields: absolute PDF coordinates (y from bottom, PDF-style)
+  let cssLeft: number, cssTop: number, cssW: number, cssH: number;
+  if (field.x_percent != null) {
+    cssLeft = (field.x_percent / 100) * TARGET_WIDTH;
+    cssTop = ((field.y_percent ?? 0) / 100) * pageH;
+    cssW = ((field.width_percent ?? 20) / 100) * TARGET_WIDTH;
+    cssH = ((field.height_percent ?? 4) / 100) * pageH;
+  } else {
+    // Convert PDF coordinates (origin bottom-left) to CSS (origin top-left)
+    cssLeft = (field.x ?? 0) * scale;
+    cssTop = pageH - ((field.y ?? 0) + (field.height ?? 18)) * scale;
+    cssW = (field.width ?? 120) * scale;
+    cssH = (field.height ?? 18) * scale;
+  }
   const fontSize = (field.font_size ?? 12) * scale;
 
   // Shared style that exactly fits the PDF field rectangle.
