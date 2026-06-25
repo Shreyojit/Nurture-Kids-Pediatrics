@@ -11,7 +11,7 @@ import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.j
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
-import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
+import { generateResponsesSummaryPdf, unwrapResponseEntry } from '../lib/responsesSummaryPdf.js';
 import { db, nowIso, parseJson } from '../db/database.js';
 import {
   getTemplateBySubmissionContext,
@@ -585,12 +585,12 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
           let fieldValue: string | undefined;
           if (mf.field_type === 'radio' && mf.radio_group) {
             // Frontend stores radio responses as __group_${radio_group} = radio_value
-            const radioResp = String(responseMap[`__group_${mf.radio_group}`] ?? '');
+            const radioResp = String(unwrapResponseEntry(responseMap[`__group_${mf.radio_group}`]) ?? '');
             if (radioResp !== mf.radio_value) continue;
             fieldValue = mf.radio_value ?? undefined;
           } else {
-            const raw = responseMap[mf.field_id];
-            fieldValue = raw != null ? String(raw) : undefined;
+            const raw = unwrapResponseEntry(responseMap[mf.field_id]);
+            fieldValue = raw != null && raw !== '' ? String(raw) : undefined;
           }
           if (!fieldValue) continue;
 
