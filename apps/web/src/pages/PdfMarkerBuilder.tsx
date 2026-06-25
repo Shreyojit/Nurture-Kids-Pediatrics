@@ -79,6 +79,10 @@ export function PdfMarkerBuilder() {
   // Placing mode: when non-null, clicking the PDF places a field of this type
   const [placingType, setPlacingType] = useState<string | null>(null);
 
+  // Checkbox size in % (width × height); persists between placements and syncs on resize
+  const [cbW, setCbW] = useState(3);
+  const [cbH, setCbH] = useState(3);
+
   // Radio group quick-add panel
   const [showRadioPanel, setShowRadioPanel] = useState(false);
   const [radioGroup, setRadioGroup] = useState('');
@@ -200,8 +204,8 @@ export function PdfMarkerBuilder() {
     const xPct = toPercent(clickX, CANVAS_WIDTH);
     const yPct = toPercent(clickY, ph);
 
-    const defaultW = placingType === 'textarea' ? 30 : placingType === 'checkbox' ? 3 : placingType === 'signature' ? 25 : 20;
-    const defaultH = placingType === 'textarea' ? 10 : placingType === 'checkbox' ? 3 : 4;
+    const defaultW = placingType === 'textarea' ? 30 : placingType === 'checkbox' ? cbW : placingType === 'signature' ? 25 : 20;
+    const defaultH = placingType === 'textarea' ? 10 : placingType === 'checkbox' ? cbH : 4;
 
     void addField({
       field_name: `${placingType}_${Date.now()}`,
@@ -515,6 +519,35 @@ export function PdfMarkerBuilder() {
               </button>
             </div>
 
+            {/* Checkbox size controls — always visible, persists between placements */}
+            <div style={{ marginTop: 10, padding: '8px 10px', background: '#f0fdf4', borderRadius: 6, border: '1px solid #bbf7d0' }}>
+              <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: '#065f46', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                Checkbox Size (% of page)
+              </p>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: '#374151' }}>W</span>
+                <input
+                  type="number"
+                  min={0.5} max={50} step={0.1}
+                  value={cbW}
+                  onChange={(e) => setCbW(Math.max(0.5, Number(e.target.value)))}
+                  style={{ width: 58, fontSize: 12, padding: '3px 6px', border: '1px solid #6ee7b7', borderRadius: 4, outline: 'none' }}
+                />
+                <span style={{ fontSize: 13, color: '#6b7280' }}>×</span>
+                <span style={{ fontSize: 11, color: '#374151' }}>H</span>
+                <input
+                  type="number"
+                  min={0.5} max={50} step={0.1}
+                  value={cbH}
+                  onChange={(e) => setCbH(Math.max(0.5, Number(e.target.value)))}
+                  style={{ width: 58, fontSize: 12, padding: '3px 6px', border: '1px solid #6ee7b7', borderRadius: 4, outline: 'none' }}
+                />
+              </div>
+              <p style={{ margin: '5px 0 0', fontSize: 10, color: '#6b7280' }}>
+                Updates when you resize a checkbox
+              </p>
+            </div>
+
             {isPlacing && (
               <div style={{
                 marginTop: 10, padding: '8px 10px', borderRadius: 6,
@@ -761,6 +794,13 @@ export function PdfMarkerBuilder() {
                           void updateFieldGeometry(field.id, d.x, d.y, w, h, pageNum);
                         }}
                         onResizeStop={(_e, _dir, ref, _delta, pos) => {
+                          if (field.field_type === 'checkbox') {
+                            const ph2 = pageHeights[pageNum];
+                            if (ph2) {
+                              setCbW(parseFloat(toPercent(ref.offsetWidth, CANVAS_WIDTH).toFixed(2)));
+                              setCbH(parseFloat(toPercent(ref.offsetHeight, ph2).toFixed(2)));
+                            }
+                          }
                           void updateFieldGeometry(field.id, pos.x, pos.y, ref.offsetWidth, ref.offsetHeight, pageNum);
                         }}
                         onClick={(e: React.MouseEvent) => {
