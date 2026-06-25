@@ -4,14 +4,14 @@ import QRCode from 'qrcode';
 import { z } from 'zod';
 import { comparePassword, hashPassword, signToken } from '../lib/auth.js';
 import { fail, ok } from '../lib/response.js';
-import { buildPatientRegistrationFileName, generateSubmissionPdf } from '../lib/pdfGenerator.js';
+import { buildSubmissionDownloadFileName } from '../lib/pdfGenerator.js';
 import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
 import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
 import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { getTemplateBySubmissionContext, getTemplateWithFields } from '../db/templateQueries.js';
+import { getTemplateBySubmissionContext } from '../db/templateQueries.js';
 import {
   addSubmissionEvent,
   autosaveSubmissionResponses,
@@ -1039,7 +1039,8 @@ staffRouter.get('/submissions/:id/pdf', async (req, res) => {
       });
     }
 
-    const fileName = buildPatientRegistrationFileName(exported);
+    const formName = String(templateContext?.template.name ?? exported.form_id ?? 'form');
+    const fileName = buildSubmissionDownloadFileName(exported, formName);
 
     addSubmissionEvent({
       submissionId: req.params.id,

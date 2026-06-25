@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { getPatientSession } from '../lib/patientSession';
 
 const TOTAL_STEPS = 8;
 
@@ -56,10 +57,17 @@ export function ParentEnrollPage() {
     setError('');
     setLoading(true);
     try {
+      const session = getPatientSession();
+      const regForm = session?.access?.forms?.find((f) => f.template_key === 'patient_registration');
+      const practiceSlug = regForm?.practice_slug ?? session?.access?.forms?.[0]?.practice_slug ?? undefined;
       await api('/api/patient-portal/enroll', {
         method: 'POST',
-        body: JSON.stringify({ responses: form }),
+        body: JSON.stringify({ responses: form, practice_slug: practiceSlug }),
       });
+      if (session) {
+        navigate('/parent/dashboard');
+        return;
+      }
       setDone(true);
     } catch (err) {
       setError((err as Error).message || 'Submission failed. Please try again.');

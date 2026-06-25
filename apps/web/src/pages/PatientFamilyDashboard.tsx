@@ -3,7 +3,7 @@
  * Each form/file shows: Org Name › Branch Name (when a branch is known).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import {
   clearPatientSession,
@@ -70,10 +70,14 @@ function normalizeAccess(raw: Record<string, unknown>): PatientPortalAccess {
         ? practiceNames[0]
         : null;
 
-  const forms = ((raw.forms as PatientPortalForm[]) ?? []).map((f) => ({
-    ...f,
-    practice_name: String(f.practice_name ?? singlePractice ?? ''),
-  }));
+  const seenIds = new Set<string>();
+  const forms = ((raw.forms as PatientPortalForm[]) ?? [])
+    .map((f) => ({ ...f, practice_name: String(f.practice_name ?? singlePractice ?? '') }))
+    .filter((f) => {
+      if (seenIds.has(f.assignment_id)) return false;
+      seenIds.add(f.assignment_id);
+      return true;
+    });
 
   return {
     patient_first_name: String(raw.patient_first_name ?? ''),
@@ -299,6 +303,14 @@ export function PatientFamilyDashboard({ onSessionChange }: Props) {
                           <button type="button" className="patient-portal-start-btn" onClick={() => openForm(form)}>
                             {form.status === 'in_progress' ? 'Continue' : 'Start'}
                           </button>
+                        ) : form.template_key === 'patient_registration' ? (
+                          <Link
+                            to="/parent/enroll"
+                            className="patient-portal-start-btn"
+                            style={{ textDecoration: 'none', textAlign: 'center', display: 'inline-block' }}
+                          >
+                            Start
+                          </Link>
                         ) : null}
                       </div>
                     ))}

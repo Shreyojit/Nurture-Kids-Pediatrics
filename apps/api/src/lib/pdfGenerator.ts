@@ -34,6 +34,14 @@ export function buildPatientRegistrationFileName(exported: CanonicalExport): str
   return `${sanitizeFileName(`${first}_${last}`)}_patientregistration.pdf`;
 }
 
+export function buildSubmissionDownloadFileName(exported: CanonicalExport, formName?: string): string {
+  const patient = exported.normalized_patient_data?.patient ?? {};
+  const first = safe(patient.child_first_name || exported.payload?.patient?.child?.first_name || 'patient');
+  const last = safe(patient.child_last_name || exported.payload?.patient?.child?.last_name || 'unknown');
+  const name = formName?.trim() || String(exported.form_id || 'form');
+  return `${sanitizeFileName(`${first}_${last}_${name}`)}.pdf`;
+}
+
 function pickData(exported: CanonicalExport) {
   const patient = exported.normalized_patient_data?.patient ?? {};
   const guardians = exported.normalized_patient_data?.guardians ?? [];

@@ -128,7 +128,23 @@ export function buildPortalFormsForPatient(
       status: 'completed' as const,
     }));
 
-  return [...activeForms, ...completedForms];
+  const hasRegistration = db
+    .prepare('select id from patient_registrations where patient_id = ? limit 1')
+    .get(patient.id as string) as { id: string } | undefined;
+
+  const regItem: PortalFormItem = {
+    assignment_id: `__reg_${String(patient.id)}`,
+    template_name: 'Patient Registration',
+    template_key: 'patient_registration',
+    session_id: null,
+    practice_slug: practiceSlug,
+    practice_name: practiceName,
+    location_name: null,
+    template_id: '__registration',
+    status: hasRegistration ? 'completed' : 'pending',
+  };
+
+  return [regItem, ...activeForms, ...completedForms];
 }
 
 export function buildPortalDocumentsForPatient(
