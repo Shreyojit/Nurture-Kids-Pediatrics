@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { getPatientSession, setPatientSession, type PatientPortalAccess } from '../lib/patientSession';
 function normalizeAccess(raw: Record<string, unknown>): PatientPortalAccess {
@@ -131,12 +131,12 @@ export function ParentLoginPage({ onPatientSession }: Props) {
 
             <div style={{ textAlign: 'center', marginTop: 16 }}>
               <span style={{ color: '#6b7280', fontSize: 14 }}>New patient? </span>
-              <a
-                href="/parent/enroll"
+              <Link
+                to="/parent/enroll"
                 style={{ color: '#1d4ed8', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
               >
                 Register here →
-              </a>
+              </Link>
             </div>
           </form>
 

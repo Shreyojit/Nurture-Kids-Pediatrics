@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 
 const TOTAL_STEPS = 8;
@@ -190,9 +190,9 @@ export function ParentEnrollPage() {
 
         <p style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: '#9ca3af' }}>
           Already registered?{' '}
-          <a href="/parent/login" style={{ color: '#1d4ed8', fontWeight: 600 }}>
+          <Link to="/parent/login" style={{ color: '#1d4ed8', fontWeight: 600 }}>
             Sign in
-          </a>
+          </Link>
         </p>
       </div>
     </div>
