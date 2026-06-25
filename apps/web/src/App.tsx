@@ -18,6 +18,7 @@ import {
 } from './lib/staffSession';
 import { ParentOverviewPage } from './pages/ParentOverviewPage';
 import { ParentStartPage } from './pages/ParentStartPage';
+import { ParentEnrollPage } from './pages/ParentEnrollPage';
 import { StaffLoginPage } from './pages/StaffLoginPage';
 import { StaffRegisterPage } from './pages/StaffRegisterPage';
 import { StaffPatientDetailPage } from './pages/StaffPatientDetailPage';
@@ -114,6 +115,7 @@ export function App() {
           <>
             <Route path="/p/:slug/forms" element={<Navigate to="/parent/login" replace />} />
             <Route path="/parent/register" element={<ParentStartPage />} />
+            <Route path="/parent/enroll" element={<ParentEnrollPage />} />
             <Route path="/p/:slug/register" element={<ParentStartPage />} />
             <Route path="/p/:slug" element={<RedirectToPatientSignIn />} />
           </>

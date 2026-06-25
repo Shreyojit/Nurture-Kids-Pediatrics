@@ -361,6 +361,23 @@ export function runMigrations(): void {
   ensureFacilityGroupName();
   ensureAsqTables();
   ensureMarkerColumns();
+  ensurePatientRegistrationsTable();
+}
+
+function ensurePatientRegistrationsTable(): void {
+  db.exec(`
+    create table if not exists patient_registrations (
+      id text primary key,
+      practice_id text not null,
+      patient_id text not null,
+      responses_json text not null,
+      created_at text not null,
+      foreign key(practice_id) references practices(id),
+      foreign key(patient_id) references patients(id)
+    );
+    create index if not exists idx_patient_registrations_patient
+      on patient_registrations(patient_id);
+  `);
 }
 
 function renameSunshinePractice(): void {

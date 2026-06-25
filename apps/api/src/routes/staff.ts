@@ -10,6 +10,7 @@ import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
 import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { getTemplateBySubmissionContext, getTemplateWithFields } from '../db/templateQueries.js';
 import {
   addSubmissionEvent,
@@ -443,6 +444,252 @@ staffRouter.delete('/patients/:id', (req, res) => {
   }
   ok(res, { deleted: true });
 });
+
+/** GET /api/staff/patients/:id/registration-pdf — download most recent registration as PDF. */
+staffRouter.get('/patients/:id/registration-pdf', (req, res) => {
+  const row = db
+    .prepare(
+      `select responses_json from patient_registrations
+       where patient_id = ? and practice_id = ?
+       order by created_at desc limit 1`,
+    )
+    .get(req.params.id, req.user!.practiceId) as { responses_json: string } | undefined;
+
+  if (!row) {
+    fail(res, 'NOT_FOUND', 'No registration found for this patient', 404);
+    return;
+  }
+
+  const responses = JSON.parse(row.responses_json) as Record<string, unknown>;
+  const fn = String(responses.patient_first_name ?? 'patient').replace(/[^a-z0-9]/gi, '_');
+  const ln = String(responses.patient_last_name ?? 'unknown').replace(/[^a-z0-9]/gi, '_');
+
+  buildRegistrationPdf(responses)
+    .then((pdfBytes) => {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="registration_${fn}_${ln}.pdf"`);
+      res.send(Buffer.from(pdfBytes));
+    })
+    .catch((err) => {
+      fail(res, 'PDF_ERROR', (err as Error).message, 500);
+    });
+});
+
+async function buildRegistrationPdf(r: Record<string, unknown>): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const W = 612, H = 792, M = 50;
+  const CW = W - 2 * M;
+  const BLUE = rgb(0.06, 0.24, 0.47);
+  const DKGRAY = rgb(0.12, 0.12, 0.12);
+  const LTGRAY = rgb(0.45, 0.45, 0.45);
+  const BGBLUE = rgb(0.92, 0.95, 0.99);
+
+  let page = pdfDoc.addPage([W, H]);
+  let y = H - 80;
+
+  function pageHeader() {
+    page.drawRectangle({ x: 0, y: H - 68, width: W, height: 68, color: BLUE });
+    page.drawText('New Patient Registration', {
+      x: M, y: H - 40, size: 18, font: boldFont, color: rgb(1, 1, 1),
+    });
+    page.drawText('Confidential Patient Record', {
+      x: M, y: H - 58, size: 10, font, color: rgb(0.8, 0.9, 1),
+    });
+  }
+  pageHeader();
+
+  function checkY(need: number) {
+    if (y - need < 40) {
+      page.drawText('— continued —', { x: W / 2 - 28, y: 28, size: 8, font, color: LTGRAY });
+      page = pdfDoc.addPage([W, H]);
+      pageHeader();
+      y = H - 88;
+    }
+  }
+
+  function sectionHead(title: string) {
+    checkY(36);
+    y -= 10;
+    page.drawRectangle({ x: M, y: y - 5, width: CW, height: 20, color: BGBLUE });
+    page.drawText(title.toUpperCase(), { x: M + 8, y: y + 2, size: 9, font: boldFont, color: BLUE });
+    y -= 22;
+  }
+
+  function v(key: string): string {
+    const val = r[key];
+    if (Array.isArray(val)) return (val as unknown[]).join(', ');
+    return String(val ?? '').trim();
+  }
+
+  function field(label: string, value: string) {
+    if (!value) return;
+    const maxChars = 90;
+    checkY(26);
+    page.drawText(label + ':', { x: M, y, size: 8, font: boldFont, color: LTGRAY });
+    const words = value.split(' ');
+    let line = '', firstLine = true;
+    for (const word of words) {
+      if ((line + (line ? ' ' : '') + word).length > maxChars) {
+        checkY(14);
+        page.drawText(line, { x: M + 145, y: firstLine ? y : y, size: 10, font, color: DKGRAY });
+        if (firstLine) { firstLine = false; } else { y -= 13; }
+        line = word;
+        if (!firstLine) y -= 13;
+      } else {
+        line += (line ? ' ' : '') + word;
+      }
+    }
+    if (line) {
+      page.drawText(line, { x: M + 145, y, size: 10, font, color: DKGRAY });
+    }
+    y -= 16;
+  }
+
+  // ── Patient Information ──────────────────────────────────────────────────
+  sectionHead('Patient Information');
+  field('Last Name', v('patient_last_name'));
+  field('First Name', v('patient_first_name'));
+  field('Middle Initial', v('patient_middle_initial'));
+  field('Sex', v('patient_sex'));
+  field('Date of Birth', v('patient_dob'));
+  field('Social Security #', v('patient_ssn'));
+  field('Home Phone', v('patient_home_phone'));
+  field('Address', v('patient_address'));
+  field('City', v('patient_city'));
+  field('State', v('patient_state'));
+  field('Zip Code', v('patient_zip'));
+  sectionHead('Emergency Contact');
+  field('Name', v('emergency_name'));
+  field('Relationship', v('emergency_relationship'));
+  field('Phone', v('emergency_phone'));
+
+  // ── Guardian 1 ───────────────────────────────────────────────────────────
+  sectionHead('Guardian 1');
+  field('Type', v('guardian1_type'));
+  field('Full Name', v('guardian1_name'));
+  field('Date of Birth', v('guardian1_dob'));
+  field('Email', v('guardian1_email'));
+  field('Home Phone', v('guardian1_home_phone'));
+  field('Work Phone', v('guardian1_work_phone'));
+  field('Cell Phone', v('guardian1_cell'));
+  field('Marital Status', v('guardian1_marital_status'));
+  field('Address', v('guardian1_address'));
+  field('City', v('guardian1_city'));
+  field('State', v('guardian1_state'));
+  field('Zip', v('guardian1_zip'));
+
+  // ── Guardian 2 ───────────────────────────────────────────────────────────
+  sectionHead('Guardian 2');
+  field('Type', v('guardian2_type'));
+  field('Full Name', v('guardian2_name'));
+  field('Date of Birth', v('guardian2_dob'));
+  field('Email', v('guardian2_email'));
+  field('Home Phone', v('guardian2_home_phone'));
+  field('Work Phone', v('guardian2_work_phone'));
+  field('Cell Phone', v('guardian2_cell'));
+  field('Marital Status', v('guardian2_marital_status'));
+  field('Address', v('guardian2_address'));
+  field('City', v('guardian2_city'));
+  field('State', v('guardian2_state'));
+  field('Zip', v('guardian2_zip'));
+
+  // ── Insurance ────────────────────────────────────────────────────────────
+  sectionHead('Primary Insurance');
+  field('Insurance Company', v('primary_insurance_company'));
+  field('Policyholder Name', v('primary_policyholder'));
+  field('Policyholder DOB', v('primary_policyholder_dob'));
+  field('Member ID', v('primary_member_id'));
+  field('Group Number', v('primary_group_number'));
+  sectionHead('Secondary Insurance');
+  field('Insurance Company', v('secondary_insurance_company'));
+  field('Policyholder Name', v('secondary_policyholder'));
+  field('Policyholder DOB', v('secondary_policyholder_dob'));
+  field('Member ID', v('secondary_member_id'));
+  field('Group Number', v('secondary_group_number'));
+
+  // ── Medical History ──────────────────────────────────────────────────────
+  sectionHead('Medical History');
+  field('Information Provided By', v('medical_info_by'));
+  field('Reason for Visit', v('reason_for_visit'));
+  field('Current Medications', v('current_medications'));
+  field('Medication Allergies', v('allergy_medications'));
+  field('Food Allergies', v('allergy_foods'));
+  field('Other Allergies', v('allergy_other'));
+
+  // ── HIPAA ────────────────────────────────────────────────────────────────
+  sectionHead('HIPAA Authorization / Release of Information');
+  field('Patient Name', v('hipaa_patient_name'));
+  field('Date of Birth', v('hipaa_patient_dob'));
+  field('Telephone', v('hipaa_phone'));
+  field('Release From', v('hipaa_release_from'));
+  field('Released To', v('hipaa_released_to'));
+  field('Information to Release', v('hipaa_release_info'));
+  field('Reason for Disclosure', v('hipaa_reason'));
+  field('Signature', v('hipaa_signature'));
+  field('Signature Date', v('hipaa_signature_date'));
+  field('Relationship', v('hipaa_relationship'));
+
+  // ── Financial Policy ─────────────────────────────────────────────────────
+  sectionHead('Insurance Authorization');
+  field('Patient Name', v('insurance_auth_patient_name'));
+  field('Patient DOB', v('insurance_auth_patient_dob'));
+  field('Parent / Guardian Name', v('insurance_auth_parent_name'));
+  field('Relationship', v('insurance_auth_relationship'));
+  field('Signature', v('insurance_auth_signature'));
+  field('Date', v('insurance_auth_date'));
+  sectionHead('Text / Email Authorization');
+  field('Email', v('text_email'));
+  field('Cell Phone', v('text_cell'));
+  field('Patient Name', v('text_patient_name'));
+  field('Print Name', v('text_print_name'));
+  field('Relationship', v('text_relationship'));
+  field('Signature', v('text_signature'));
+  field('Date', v('text_date'));
+  sectionHead('Financial Policy');
+  field('Acknowledged', r['financial_policy_ack'] ? 'Yes' : '');
+  field('Parent / Guardian Name', v('financial_parent_name'));
+  field('Signature', v('financial_signature'));
+  field('Date', v('financial_date'));
+  sectionHead('Credit Card Authorization');
+  field('Patient Name', v('card_patient_name'));
+  field('Authorized', r['card_on_file_ack'] ? 'Yes' : '');
+  field('Parent / Guardian Name', v('card_parent_name'));
+  field('Signature', v('card_signature'));
+  field('Date', v('card_date'));
+
+  // ── Consent ──────────────────────────────────────────────────────────────
+  sectionHead('Informed Consent');
+  field('Name', v('consent_name'));
+  field('Consent Acknowledged', r['informed_consent_ack'] ? 'Yes' : '');
+  field('Client Signature', v('client_signature'));
+  field('Client Signature Date', v('client_signature_date'));
+  field('Guardian Signature', v('guardian_consent_signature'));
+  field('Guardian Date', v('guardian_consent_date'));
+  sectionHead('Non-Parent Authorization');
+  field('Name', v('nonparent_name'));
+  field('Relationship', v('nonparent_relationship'));
+  field('Patient Name', v('nonparent_patient_name'));
+  field('Patient DOB', v('nonparent_patient_dob'));
+  field('Authorized Person', v('authorized_person'));
+  field('Authorized Person Phone', v('authorized_person_phone'));
+  field('Additional Authorized Person', v('additional_authorized_person'));
+  field('Additional Phone', v('additional_authorized_phone'));
+  field('Signature', v('nonparent_signature'));
+  field('Date', v('nonparent_date'));
+
+  // Page numbers
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((p, i) => {
+    p.drawText(`Page ${i + 1} of ${allPages.length}`, {
+      x: W / 2 - 22, y: 22, size: 8, font, color: LTGRAY,
+    });
+  });
+
+  return pdfDoc.save();
+}
 
 function practiceSlug(practiceId: string): string {
   const practice = findPracticeById(practiceId) as { slug?: string } | undefined;

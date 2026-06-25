@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -12,7 +12,7 @@ import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
-import { parseJson } from '../db/database.js';
+import { db, nowIso, parseJson } from '../db/database.js';
 import {
   getTemplateBySubmissionContext,
   getTemplateWithFields,
@@ -711,4 +711,64 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
   })().catch((error) => {
     fail(res, 'SUBMISSION_COMPLETE_ERROR', (error as Error).message || 'Failed to complete submission', 500);
   });
+});
+
+/** POST /api/patient-portal/enroll — public new-patient registration (no auth). */
+publicRouter.post('/patient-portal/enroll', (req, res) => {
+  const body = req.body as { responses?: Record<string, unknown>; practice_slug?: string };
+  const responses = body?.responses;
+  if (!responses || typeof responses !== 'object') {
+    fail(res, 'VALIDATION_ERROR', 'responses object required', 422);
+    return;
+  }
+
+  const firstName = String(responses.patient_first_name ?? '').trim();
+  const lastName = String(responses.patient_last_name ?? '').trim();
+  const dob = String(responses.patient_dob ?? '').trim().slice(0, 10);
+  if (!firstName || !lastName || !dob) {
+    fail(res, 'VALIDATION_ERROR', 'Patient first name, last name, and date of birth are required', 422);
+    return;
+  }
+
+  const practice = body.practice_slug
+    ? findPracticeBySlug(String(body.practice_slug))
+    : (db.prepare('select * from practices limit 1').get() as Record<string, unknown> | undefined);
+  if (!practice) {
+    fail(res, 'NOT_FOUND', 'Practice not found', 404);
+    return;
+  }
+
+  const now = nowIso();
+  const practiceId = String(practice.id);
+
+  let patient = db
+    .prepare(
+      `select * from patients
+       where practice_id = ?
+         and lower(trim(child_first_name)) = lower(trim(?))
+         and lower(trim(child_last_name)) = lower(trim(?))
+         and child_dob = ?`,
+    )
+    .get(practiceId, firstName, lastName, dob) as Record<string, unknown> | undefined;
+
+  if (!patient) {
+    const patientId = randomUUID();
+    const portalToken = randomBytes(16).toString('hex');
+    const sex = String(responses.patient_sex ?? '').trim() || null;
+    db.prepare(
+      `insert into patients
+         (id, practice_id, child_first_name, child_last_name, child_dob, visit_type, sex, portal_token, created_at, updated_at)
+       values (?, ?, ?, ?, ?, 'new_patient', ?, ?, ?, ?)`,
+    ).run(patientId, practiceId, firstName, lastName, dob, sex, portalToken, now, now);
+    patient = db.prepare('select * from patients where id = ?').get(patientId) as Record<string, unknown>;
+  }
+
+  const patientId = String(patient.id);
+  const regId = randomUUID();
+  db.prepare(
+    `insert into patient_registrations (id, practice_id, patient_id, responses_json, created_at)
+     values (?, ?, ?, ?, ?)`,
+  ).run(regId, practiceId, patientId, JSON.stringify(responses), now);
+
+  ok(res, { success: true, patient_id: patientId, registration_id: regId });
 });

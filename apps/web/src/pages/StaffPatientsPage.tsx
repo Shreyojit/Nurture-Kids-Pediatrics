@@ -663,6 +663,39 @@ export function StaffPatientsPage({ token }: Props) {
                     </Link>
                     <button
                       type="button"
+                      title="Download registration PDF"
+                      onClick={() => {
+                        fetch(`/api/staff/patients/${patient.id}/registration-pdf`, {
+                          headers: { Authorization: `Bearer ${token}` },
+                        }).then((r) => {
+                          if (!r.ok) { alert('No registration on file for this patient.'); return; }
+                          return r.blob().then((blob) => {
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `registration_${patient.child_first_name ?? ''}_${patient.child_last_name ?? ''}.pdf`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          });
+                        });
+                      }}
+                      style={{
+                        marginLeft: 6,
+                        background: 'transparent',
+                        border: '1px solid #93c5fd',
+                        borderRadius: 5,
+                        color: '#1d4ed8',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: 500,
+                        padding: '3px 8px',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Reg PDF
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setConfirmDeleteId(patient.id)}
                       title="Delete patient"
                       style={{

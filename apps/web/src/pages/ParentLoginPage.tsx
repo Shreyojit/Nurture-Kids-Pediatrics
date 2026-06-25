@@ -128,6 +128,16 @@ export function ParentLoginPage({ onPatientSession }: Props) {
             <button type="submit" className="patient-portal-submit" disabled={loading} style={{ width: '100%' }}>
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
+
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <span style={{ color: '#6b7280', fontSize: 14 }}>New patient? </span>
+              <a
+                href="/parent/enroll"
+                style={{ color: '#1d4ed8', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+              >
+                Register here →
+              </a>
+            </div>
           </form>
 
 
