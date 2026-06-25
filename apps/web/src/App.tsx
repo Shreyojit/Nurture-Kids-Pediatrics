@@ -98,6 +98,7 @@ export function App() {
         {/* Patient welcome + login/dashboard — accessible in all modes */}
         <Route path="/parent/welcome" element={<PatientWelcomePage />} />
         <Route path="/parent/login" element={<ParentLoginPage onPatientSession={onPatientSession} />} />
+        <Route path="/parent/enroll" element={<ParentEnrollPage />} />
         <Route
           path="/parent/dashboard"
           element={<PatientFamilyDashboard onSessionChange={setPatientSession} />}
@@ -115,7 +116,6 @@ export function App() {
           <>
             <Route path="/p/:slug/forms" element={<Navigate to="/parent/login" replace />} />
             <Route path="/parent/register" element={<ParentStartPage />} />
-            <Route path="/parent/enroll" element={<ParentEnrollPage />} />
             <Route path="/p/:slug/register" element={<ParentStartPage />} />
             <Route path="/p/:slug" element={<RedirectToPatientSignIn />} />
           </>
