@@ -15,10 +15,16 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET ?? 'dev-secret-change-me',
   dbPath: process.env.DB_PATH ?? path.join(dataPath, 'pediform.db'),
   // Accepts a comma-separated list of origins: "https://a.com,https://b.com"
-  // Falls back to '*' (allow all) when the env var is not set.
+  // Falls back to known production origins when the env var is not set.
   corsOrigin: process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
-    : '*',
+    : [
+        'https://admin.pediformpro.com',
+        'https://pediformpro.com',
+        'https://www.pediformpro.com',
+        'http://localhost:5173',
+        'http://localhost:5174',
+      ],
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
