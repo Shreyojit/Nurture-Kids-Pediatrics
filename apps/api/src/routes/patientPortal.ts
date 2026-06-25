@@ -21,6 +21,7 @@ import {
   pickEarliestAppointment,
 } from '../lib/patientPortalAccess.js';
 import { buildPatientRegistrationFileName, generateSubmissionPdf } from '../lib/pdfGenerator.js';
+import { generateResponsesSummaryPdf } from '../lib/responsesSummaryPdf.js';
 import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
 import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
@@ -241,8 +242,24 @@ patientPortalRouter.get('/submissions/:id/pdf', async (req, res) => {
           id: string; group_type: string; group_name: string; acro_group_name: string;
         }>,
       });
+    } else if (templateContext?.template.is_marker_template) {
+      // Visual-markers forms: the filled PDF was written to completed_pdf_path at submission time.
+      const completedPath = exported.completed_pdf_path
+        ? resolveDataPath(String(exported.completed_pdf_path))
+        : null;
+      if (completedPath && fs.existsSync(completedPath)) {
+        pdfBytes = new Uint8Array(fs.readFileSync(completedPath));
+      } else {
+        pdfBytes = await generateResponsesSummaryPdf({
+          title: String(templateContext.template.name ?? exported.form_id ?? 'Form Responses'),
+          responses: (exported.responses ?? {}) as Record<string, unknown>,
+        });
+      }
     } else {
-      pdfBytes = await generateSubmissionPdf(exported);
+      pdfBytes = await generateResponsesSummaryPdf({
+        title: String(templateContext?.template.name ?? exported.form_id ?? 'Form Responses'),
+        responses: (exported.responses ?? {}) as Record<string, unknown>,
+      });
     }
 
     const fileName = buildPatientRegistrationFileName(exported);
