@@ -713,62 +713,116 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
   });
 });
 
-/** POST /api/patient-portal/enroll — public new-patient registration (no auth). */
+/** POST /api/patient-portal/enroll — new-patient registration (public or portal-authenticated).
+ *
+ * When `patient_identity` is provided the caller is a logged-in portal user.
+ * In that case we look up the patient by session identity and NEVER create a new record —
+ * this prevents a new row being inserted when the user types different data in Step 1.
+ *
+ * Without `patient_identity` (unauthenticated public registration) the existing
+ * find-or-create behaviour is preserved.
+ */
 publicRouter.post('/patient-portal/enroll', (req, res) => {
-  const body = req.body as { responses?: Record<string, unknown>; practice_slug?: string };
+  const body = req.body as {
+    responses?: Record<string, unknown>;
+    practice_slug?: string;
+    patient_identity?: { first_name?: string; last_name?: string; dob?: string };
+  };
   const responses = body?.responses;
   if (!responses || typeof responses !== 'object') {
     fail(res, 'VALIDATION_ERROR', 'responses object required', 422);
     return;
   }
 
-  const firstName = String(responses.patient_first_name ?? '').trim();
-  const lastName = String(responses.patient_last_name ?? '').trim();
-  const dob = String(responses.patient_dob ?? '').trim().slice(0, 10);
-  if (!firstName || !lastName || !dob) {
-    fail(res, 'VALIDATION_ERROR', 'Patient first name, last name, and date of birth are required', 422);
-    return;
-  }
+  const now = nowIso();
+  const sid = body.patient_identity;
+  const isPortalUser = Boolean(sid?.first_name && sid?.last_name && sid?.dob);
 
-  const practice = body.practice_slug
+  // Resolve practice — always required so we have a practice_id for the registration row
+  const practiceRecord = body.practice_slug
     ? findPracticeBySlug(String(body.practice_slug))
     : (db.prepare('select * from practices limit 1').get() as Record<string, unknown> | undefined);
-  if (!practice) {
+  if (!practiceRecord) {
     fail(res, 'NOT_FOUND', 'Practice not found', 404);
     return;
   }
+  const practiceId = String(practiceRecord.id);
 
-  const now = nowIso();
-  const practiceId = String(practice.id);
+  let patient: Record<string, unknown> | undefined;
 
-  let patient = db
-    .prepare(
-      `select * from patients
-       where practice_id = ?
-         and lower(trim(child_first_name)) = lower(trim(?))
-         and lower(trim(child_last_name)) = lower(trim(?))
-         and child_dob = ?`,
-    )
-    .get(practiceId, firstName, lastName, dob) as Record<string, unknown> | undefined;
+  if (isPortalUser) {
+    // Logged-in patient: use session identity, never create a new row
+    const fn = String(sid!.first_name).trim();
+    const ln = String(sid!.last_name).trim();
+    const dob = String(sid!.dob).trim().slice(0, 10);
 
-  if (!patient) {
-    const patientId = randomUUID();
-    const portalToken = randomBytes(16).toString('hex');
-    const sex = String(responses.patient_sex ?? '').trim() || null;
-    db.prepare(
-      `insert into patients
-         (id, practice_id, child_first_name, child_last_name, child_dob, visit_type, sex, portal_token, created_at, updated_at)
-       values (?, ?, ?, ?, ?, 'new_patient', ?, ?, ?, ?)`,
-    ).run(patientId, practiceId, firstName, lastName, dob, sex, portalToken, now, now);
-    patient = db.prepare('select * from patients where id = ?').get(patientId) as Record<string, unknown>;
+    patient = db
+      .prepare(
+        `select * from patients
+         where practice_id = ?
+           and lower(trim(child_first_name)) = lower(trim(?))
+           and lower(trim(child_last_name)) = lower(trim(?))
+           and child_dob = ?`,
+      )
+      .get(practiceId, fn, ln, dob) as Record<string, unknown> | undefined;
+
+    if (!patient) {
+      // Fallback: search across all practices (handles edge cases where slug differs)
+      patient = db
+        .prepare(
+          `select * from patients
+           where lower(trim(child_first_name)) = lower(trim(?))
+             and lower(trim(child_last_name)) = lower(trim(?))
+             and child_dob = ?
+           limit 1`,
+        )
+        .get(fn, ln, dob) as Record<string, unknown> | undefined;
+    }
+
+    if (!patient) {
+      fail(res, 'NOT_FOUND', 'Patient record not found. Please contact your practice.', 404);
+      return;
+    }
+  } else {
+    // Unauthenticated public registration: use form values, allow patient creation
+    const firstName = String(responses.patient_first_name ?? '').trim();
+    const lastName = String(responses.patient_last_name ?? '').trim();
+    const dob = String(responses.patient_dob ?? '').trim().slice(0, 10);
+    if (!firstName || !lastName || !dob) {
+      fail(res, 'VALIDATION_ERROR', 'Patient first name, last name, and date of birth are required', 422);
+      return;
+    }
+
+    patient = db
+      .prepare(
+        `select * from patients
+         where practice_id = ?
+           and lower(trim(child_first_name)) = lower(trim(?))
+           and lower(trim(child_last_name)) = lower(trim(?))
+           and child_dob = ?`,
+      )
+      .get(practiceId, firstName, lastName, dob) as Record<string, unknown> | undefined;
+
+    if (!patient) {
+      const patientId = randomUUID();
+      const portalToken = randomBytes(16).toString('hex');
+      const sex = String(responses.patient_sex ?? '').trim() || null;
+      db.prepare(
+        `insert into patients
+           (id, practice_id, child_first_name, child_last_name, child_dob, visit_type, sex, portal_token, created_at, updated_at)
+         values (?, ?, ?, ?, ?, 'new_patient', ?, ?, ?, ?)`,
+      ).run(patientId, practiceId, firstName, lastName, dob, sex, portalToken, now, now);
+      patient = db.prepare('select * from patients where id = ?').get(patientId) as Record<string, unknown>;
+    }
   }
 
   const patientId = String(patient.id);
+  const resolvedPracticeId = String(patient.practice_id ?? practiceId);
   const regId = randomUUID();
   db.prepare(
     `insert into patient_registrations (id, practice_id, patient_id, responses_json, created_at)
      values (?, ?, ?, ?, ?)`,
-  ).run(regId, practiceId, patientId, JSON.stringify(responses), now);
+  ).run(regId, resolvedPracticeId, patientId, JSON.stringify(responses), now);
 
   ok(res, { success: true, patient_id: patientId, registration_id: regId });
 });

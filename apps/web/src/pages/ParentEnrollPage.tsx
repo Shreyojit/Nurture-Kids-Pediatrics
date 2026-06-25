@@ -60,9 +60,13 @@ export function ParentEnrollPage() {
       const session = getPatientSession();
       const regForm = session?.access?.forms?.find((f) => f.template_key === 'patient_registration');
       const practiceSlug = regForm?.practice_slug ?? session?.access?.forms?.[0]?.practice_slug ?? undefined;
+      // Pass session identity so the backend uses it (not form-typed values) to find the patient
+      const patient_identity = session
+        ? { first_name: session.identity.firstName, last_name: session.identity.lastName, dob: session.identity.dob }
+        : undefined;
       await api('/api/patient-portal/enroll', {
         method: 'POST',
-        body: JSON.stringify({ responses: form, practice_slug: practiceSlug }),
+        body: JSON.stringify({ responses: form, practice_slug: practiceSlug, patient_identity }),
       });
       if (session) {
         navigate('/parent/dashboard');

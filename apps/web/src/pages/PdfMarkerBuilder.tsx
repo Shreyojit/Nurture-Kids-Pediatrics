@@ -528,18 +528,18 @@ export function PdfMarkerBuilder() {
                 <span style={{ fontSize: 11, color: '#374151' }}>W</span>
                 <input
                   type="number"
-                  min={0.5} max={50} step={0.1}
+                  min={0.1} max={50} step={0.1}
                   value={cbW}
-                  onChange={(e) => setCbW(Math.max(0.5, Number(e.target.value)))}
+                  onChange={(e) => setCbW(Math.max(0.1, Number(e.target.value)))}
                   style={{ width: 58, fontSize: 12, padding: '3px 6px', border: '1px solid #6ee7b7', borderRadius: 4, outline: 'none' }}
                 />
                 <span style={{ fontSize: 13, color: '#6b7280' }}>×</span>
                 <span style={{ fontSize: 11, color: '#374151' }}>H</span>
                 <input
                   type="number"
-                  min={0.5} max={50} step={0.1}
+                  min={0.1} max={50} step={0.1}
                   value={cbH}
-                  onChange={(e) => setCbH(Math.max(0.5, Number(e.target.value)))}
+                  onChange={(e) => setCbH(Math.max(0.1, Number(e.target.value)))}
                   style={{ width: 58, fontSize: 12, padding: '3px 6px', border: '1px solid #6ee7b7', borderRadius: 4, outline: 'none' }}
                 />
               </div>
@@ -775,8 +775,9 @@ export function PdfMarkerBuilder() {
                     const meta = FIELD_TYPE_META[field.field_type] ?? FIELD_TYPE_META.text;
                     const x = (field.x_percent / 100) * CANVAS_WIDTH;
                     const y = (field.y_percent / 100) * ph;
-                    // Enforce a minimum 24px touch target so tiny markers are always draggable
-                    const MIN_PX = 24;
+                    // Minimum touch target for draggability in the builder UI only —
+                    // does NOT affect stored percent values; rawW/rawH are the real sizes.
+                    const MIN_PX = 10;
                     const rawW = (field.width_percent / 100) * CANVAS_WIDTH;
                     const rawH = (field.height_percent / 100) * ph;
                     const w = Math.max(MIN_PX, rawW);
@@ -790,8 +791,9 @@ export function PdfMarkerBuilder() {
                         size={{ width: w, height: h }}
                         bounds="parent"
                         onDragStop={(_e, d) => {
-                          // Use actual rendered size so position is saved correctly
-                          void updateFieldGeometry(field.id, d.x, d.y, w, h, pageNum);
+                          // Use rawW/rawH (actual stored size) so dragging never overwrites
+                          // the stored percent with the MIN_PX-clamped visual size.
+                          void updateFieldGeometry(field.id, d.x, d.y, rawW, rawH, pageNum);
                         }}
                         onResizeStop={(_e, _dir, ref, _delta, pos) => {
                           if (field.field_type === 'checkbox') {
