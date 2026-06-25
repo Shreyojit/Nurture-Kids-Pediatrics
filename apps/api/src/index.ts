@@ -39,10 +39,21 @@ setInterval(() => expireStaleAssignments(), 6 * 60 * 60 * 1000);
 
 const app = express();
 
-app.use(helmet());
-app.use(cors({
+const corsOptions = {
   origin: config.corsOrigin,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+// Handle preflight OPTIONS before any other middleware (including helmet)
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+
+app.use(helmet({
+  // API is consumed cross-origin; these defaults block legitimate requests
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy: false,
 }));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
