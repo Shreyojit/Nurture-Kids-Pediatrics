@@ -4,7 +4,6 @@ import { api, authHeader } from '../lib/api';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 import {
-  formatParentPortalAccount,
   formatSubmissionStatus,
   formatVisitType,
 } from '../lib/staffLabels';
@@ -597,13 +596,14 @@ export function StaffPatientsPage({ token }: Props) {
                 <th>Form status</th>
                 <th>Parent portal</th>
                 <th>Action</th>
+                <th>Delete</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={(regionOptions.length > 1 || locationOptions.length > 1) ? 10 : 9}
+                    colSpan={(regionOptions.length > 1 || locationOptions.length > 1) ? 11 : 10}
                     style={{ textAlign: 'center', color: '#888', padding: '24px 0' }}
                   >
                     {patients.length === 0
@@ -695,12 +695,13 @@ export function StaffPatientsPage({ token }: Props) {
                     >
                       Reg PDF
                     </button>
+                  </td>
+                  <td>
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteId(patient.id)}
                       title="Delete patient"
                       style={{
-                        marginLeft: 6,
                         background: 'transparent',
                         border: '1px solid #fca5a5',
                         borderRadius: 5,
@@ -710,6 +711,7 @@ export function StaffPatientsPage({ token }: Props) {
                         fontWeight: 500,
                         padding: '3px 8px',
                         lineHeight: 1.4,
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       Delete
