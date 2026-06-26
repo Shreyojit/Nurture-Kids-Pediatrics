@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, authHeader } from '../lib/api';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 import {
   formatParentPortalAccount,
   formatSubmissionStatus,
@@ -118,12 +120,11 @@ export function StaffPatientsPage({ token }: Props) {
   function handleDeleteConfirm() {
     if (!confirmDeleteId || !token) return;
     setDeleting(true);
-    fetch(`/api/staff/patients/${confirmDeleteId}`, {
+    api(`/api/staff/patients/${confirmDeleteId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeader(token),
     })
-      .then((r) => {
-        if (!r.ok) throw new Error('Delete failed');
+      .then(() => {
         setPatients((prev) => prev.filter((p) => p.id !== confirmDeleteId));
         setConfirmDeleteId(null);
       })
@@ -665,7 +666,7 @@ export function StaffPatientsPage({ token }: Props) {
                       type="button"
                       title="Download registration PDF"
                       onClick={() => {
-                        fetch(`/api/staff/patients/${patient.id}/registration-pdf`, {
+                        fetch(`${API_BASE}/api/staff/patients/${patient.id}/registration-pdf`, {
                           headers: { Authorization: `Bearer ${token}` },
                         }).then((r) => {
                           if (!r.ok) { alert('No registration on file for this patient.'); return; }
