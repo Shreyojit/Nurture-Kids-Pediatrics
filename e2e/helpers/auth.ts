@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test';
 
 export const ADMIN = {
-  practiceName: 'Nurture Kids Pediatrics',
-  email: 'admin@nurturekidspediatrics.com',
+  practiceName: 'Lone Star Pediatrics',
+  email: 'admin@lonestarpediatrics.com',
   password: 'Admin@12345',
 };
 

@@ -19,9 +19,9 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
     : [
-        'https://admin.pediformpro.com',
-        'https://pediformpro.com',
-        'https://www.pediformpro.com',
+        'https://admin.lonestarpediatrics.com',
+        'https://lonestarpediatrics.com',
+        'https://www.lonestarpediatrics.com',
         'http://localhost:5173',
         'http://localhost:5174',
       ],

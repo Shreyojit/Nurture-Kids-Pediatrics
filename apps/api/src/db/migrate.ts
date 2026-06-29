@@ -386,9 +386,9 @@ function renameSunshinePractice(): void {
     .get() as { id: string } | undefined;
   if (!row) return;
   db.prepare(
-    `update practices set name = 'Nurture Kids Pediatrics', slug = 'nurturekidspediatrics' where slug = 'sunshine-pediatrics'`,
+    `update practices set name = 'Lone Star Pediatrics', slug = 'lonestarpediatrics' where slug = 'sunshine-pediatrics'`,
   ).run();
-  console.log('[migrate] renameSunshinePractice: renamed to Nurture Kids Pediatrics');
+  console.log('[migrate] renameSunshinePractice: renamed to Lone Star Pediatrics');
 }
 
 function ensureTemplateSchemaColumn(): void {

@@ -71,7 +71,7 @@ export function StaffLoginPage({ onAuthenticated }: Props) {
                 id="admin-practice"
                 value={practiceName}
                 onChange={(e) => setPracticeName(e.target.value)}
-                placeholder="e.g. Nurture Kids Pediatrics"
+                placeholder="e.g. Lone Star Pediatrics"
                 autoComplete="organization"
                 required
               />
