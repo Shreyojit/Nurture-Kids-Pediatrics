@@ -119,11 +119,23 @@ export function PdfMarkerDashboard() {
     }
   }
 
-  const handleExport = (id: string, key: string) => {
-    const a = document.createElement('a');
-    a.href = `/api/staff/pdf-marker/${id}/export`;
-    a.download = `${key}_fields.json`;
-    a.click();
+  const handleExport = async (id: string, key: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/staff/pdf-marker/${id}/export`, {
+        headers: authHeader(token),
+      });
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${key}_fields.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   return (
