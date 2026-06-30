@@ -148,6 +148,12 @@ jobs:
               server_name lonestarpediatrics.com www.lonestarpediatrics.com;
               root /var/www/patient;
               index index.html;
+              types {
+                application/javascript js mjs;
+                text/css css;
+                image/svg+xml svg svgz;
+                application/json json;
+              }
               location / {
                 try_files $uri $uri/ /index.html;
               }
@@ -161,6 +167,12 @@ jobs:
               server_name admin.lonestarpediatrics.com;
               root /var/www/admin;
               index index.html;
+              types {
+                application/javascript js mjs;
+                text/css css;
+                image/svg+xml svg svgz;
+                application/json json;
+              }
               location / {
                 try_files $uri $uri/ /index.html;
               }
