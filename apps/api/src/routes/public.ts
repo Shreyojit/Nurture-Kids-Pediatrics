@@ -824,5 +824,54 @@ publicRouter.post('/patient-portal/enroll', (req, res) => {
      values (?, ?, ?, ?, ?)`,
   ).run(regId, resolvedPracticeId, patientId, JSON.stringify(responses), now);
 
-  ok(res, { success: true, patient_id: patientId, registration_id: regId });
+  // Also create a completed submission so the registration appears in the Completed Forms table.
+  let confirmationCode: string | undefined;
+  try {
+    const regTemplate = resolveIntakeTemplate(resolvedPracticeId, 'patient_registration');
+    if (regTemplate) {
+      confirmationCode = `SP-${randomBytes(3).toString('hex').toUpperCase()}`;
+      const submission = createSubmission({
+        practiceId: resolvedPracticeId,
+        patientId,
+        visitType: 'new_patient',
+        formId: 'patient_registration',
+        templateVersion: `patient_registration@v${String(regTemplate.version ?? 1)}`,
+        templateId: String(regTemplate.id),
+        templateVersionNum: Number(regTemplate.version ?? 1),
+        initialData: {
+          patient: {
+            child: {
+              first_name: String(responses.patient_first_name ?? ''),
+              last_name: String(responses.patient_last_name ?? ''),
+            },
+          },
+        },
+        confirmationCode,
+        ipAddress: req.ip,
+      });
+
+      // Store all form responses on the submission
+      const submissionResponses: Record<string, { value: unknown }> = {};
+      for (const [key, value] of Object.entries(responses)) {
+        submissionResponses[key] = { value };
+      }
+      autosaveSubmissionResponses({ submissionId: submission.id, responses: submissionResponses });
+
+      // Mark as completed immediately — the patient filled all 8 steps
+      completeSubmission(submission.id);
+
+      addSubmissionEvent({
+        submissionId: submission.id,
+        practiceId: resolvedPracticeId,
+        actorType: 'system',
+        eventType: 'submission_created',
+        payload: { source: 'patient_enroll', registration_id: regId },
+      });
+    }
+  } catch (err) {
+    // Non-fatal — registration data is already saved in patient_registrations
+    console.error('[enroll] failed to mirror submission record:', err instanceof Error ? err.message : err);
+  }
+
+  ok(res, { success: true, patient_id: patientId, registration_id: regId, ...(confirmationCode ? { confirmation_code: confirmationCode } : {}) });
 });

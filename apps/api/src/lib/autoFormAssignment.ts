@@ -69,14 +69,16 @@ const AGE_MILESTONES: Array<{ group: AgeGroup; months: number }> = [
  * whose casing or naming differs from the stored template_key.
  */
 const FORM_KEY_MAP: Record<string, string[]> = {
-  // Mixed-case ASQ keys whose lowercased label matches the lowercased template_key
-  ASQ9Mos:  ['asq9mos', 'asq9'],
-  asq12mos: ['asq12mos', 'asq12'],
-  asq18mos: ['asq18mos', 'asq18'],
-  asq24mos: ['asq24mos', 'asq24'],
-  ASQ30:    ['asq30'],
-  asq36mos: ['asq36mos', 'asq36'],
+  // Mixed-case ASQ keys — also accept underscore format (asq_9_months etc.)
+  ASQ9Mos:  ['asq9mos', 'asq9', 'asq_9'],
+  asq12mos: ['asq12mos', 'asq12', 'asq_12'],
+  asq18mos: ['asq18mos', 'asq18', 'asq_18'],
+  asq24mos: ['asq24mos', 'asq24', 'asq_24'],
+  ASQ30:    ['asq30', 'asq_30'],
+  asq36mos: ['asq36mos', 'asq36', 'asq_36'],
   // asq_48_months falls through to fallback — ['asq_48_months'] matches key exactly
+  // m_chat / M-Chat key variants
+  mchat:    ['mchat', 'm_chat', 'm-chat'],
   // PHQ-9: cover both phq-9 and phq9 template_key variations
   'PHQ-9':  ['phq'],
 };

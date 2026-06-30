@@ -596,6 +596,7 @@ export function StaffPatientsPage({ token }: Props) {
                 <th>Form status</th>
                 <th>Parent portal</th>
                 <th>Action</th>
+                <th>Reg PDF</th>
                 <th>Delete</th>
               </tr>
             </thead>
@@ -603,7 +604,7 @@ export function StaffPatientsPage({ token }: Props) {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={(regionOptions.length > 1 || locationOptions.length > 1) ? 11 : 10}
+                    colSpan={(regionOptions.length > 1 || locationOptions.length > 1) ? 12 : 11}
                     style={{ textAlign: 'center', color: '#888', padding: '24px 0' }}
                   >
                     {patients.length === 0
@@ -662,6 +663,8 @@ export function StaffPatientsPage({ token }: Props) {
                     <Link to={`/staff/patients/${patient.id}`} className="btn-ghost btn-sm">
                       View
                     </Link>
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     <button
                       type="button"
                       title="Download registration PDF"
@@ -681,7 +684,6 @@ export function StaffPatientsPage({ token }: Props) {
                         });
                       }}
                       style={{
-                        marginLeft: 6,
                         background: 'transparent',
                         border: '1px solid #93c5fd',
                         borderRadius: 5,
