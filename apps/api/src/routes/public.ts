@@ -1,14 +1,12 @@
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 import { z } from 'zod';
-import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
 import { ok, fail } from '../lib/response.js';
 import { loadTemplate } from '../lib/templateLoader.js';
 import { fillAcroformPdfWithResponses } from '../lib/acroformEngine.js';
 import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.js';
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
+import { putObject, getObjectBuffer, objectExists, streamObjectToResponse } from '../lib/s3Storage.js';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 import { generateResponsesSummaryPdf, unwrapResponseEntry } from '../lib/responsesSummaryPdf.js';
@@ -436,32 +434,22 @@ publicRouter.get('/submissions/:id/template', (req, res) => {
   }
 });
 
-publicRouter.get('/submissions/:id/source-pdf', (req, res) => {
+publicRouter.get('/submissions/:id/source-pdf', async (req, res) => {
   const templateContext = getTemplateBySubmissionContext(req.params.id);
   if (!templateContext?.template.source_pdf_path) {
     fail(res, 'NOT_FOUND', 'Source PDF not available for this submission', 404);
     return;
   }
-  const pdfPath = resolveDataPath(templateContext.template.source_pdf_path);
-  if (!fs.existsSync(pdfPath)) {
-    fail(res, 'NOT_FOUND', 'Source PDF file not found on disk', 404);
-    return;
-  }
-  res.sendFile(pdfPath);
+  await streamObjectToResponse(templateContext.template.source_pdf_path, res, { contentType: 'application/pdf' });
 });
 
-publicRouter.get('/submissions/:id/acroform-pdf', (req, res) => {
+publicRouter.get('/submissions/:id/acroform-pdf', async (req, res) => {
   const templateContext = getTemplateBySubmissionContext(req.params.id);
   if (!templateContext?.template.acroform_pdf_path) {
     fail(res, 'NOT_FOUND', 'AcroForm PDF not available for this submission', 404);
     return;
   }
-  const pdfPath = resolveDataPath(templateContext.template.acroform_pdf_path);
-  if (!fs.existsSync(pdfPath)) {
-    fail(res, 'NOT_FOUND', 'AcroForm PDF file not found on disk', 404);
-    return;
-  }
-  res.sendFile(pdfPath);
+  await streamObjectToResponse(templateContext.template.acroform_pdf_path, res, { contentType: 'application/pdf' });
 });
 
 publicRouter.get('/submissions/:id/responses-pdf', async (req, res) => {
@@ -522,10 +510,10 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
       hasOverlayFields(overlaySchema) &&
       templateContext.template.source_pdf_path
     ) {
-      const sourcePath = resolveDataPath(templateContext.template.source_pdf_path);
-      if (fs.existsSync(sourcePath)) {
+      if (await objectExists(templateContext.template.source_pdf_path)) {
+        const sourceBytes = await getObjectBuffer(templateContext.template.source_pdf_path);
         const pdfBytes = await fillPdfWithOverlaySchema({
-          sourcePdfPath: sourcePath,
+          sourcePdfBytes: sourceBytes,
           schema: overlaySchema,
           responses: responseMap,
         });
@@ -543,11 +531,9 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
           .replace(/[^a-z0-9]+/g, '_')
           .replace(/^_+|_+$/g, '')
           .replace(/_+/g, '_');
-        const submissionsDir = path.join(config.dataPath, 'submissions', submission.id);
-        fs.mkdirSync(submissionsDir, { recursive: true });
-        const absoluteCompleted = path.join(submissionsDir, `${safeName}_${safeTemplateKey}_completed.pdf`);
-        fs.writeFileSync(absoluteCompleted, Buffer.from(pdfBytes));
-        completedPdfPath = toRelativeDataPath(absoluteCompleted);
+        const key = `submissions/${submission.id}/${safeName}_${safeTemplateKey}_completed.pdf`;
+        await putObject(key, Buffer.from(pdfBytes), 'application/pdf');
+        completedPdfPath = key;
       }
     } else if (templateContext?.template.is_marker_template && templateContext.template.source_pdf_path) {
       // Visual Markers template — fill using percentage-coordinate overlay
@@ -564,9 +550,8 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
         font_size: number | null;
       };
       const markerFields = templateContext.fields as MarkerField[];
-      const sourcePath = resolveDataPath(templateContext.template.source_pdf_path);
-      if (fs.existsSync(sourcePath)) {
-        const srcBytes = fs.readFileSync(sourcePath);
+      if (await objectExists(templateContext.template.source_pdf_path)) {
+        const srcBytes = await getObjectBuffer(templateContext.template.source_pdf_path);
         const pdfDocMarker = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
         try { pdfDocMarker.getForm().flatten(); } catch { /* no AcroForm — fine */ }
         const markerFont = await pdfDocMarker.embedFont(StandardFonts.Helvetica);
@@ -630,16 +615,14 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
         const lastNameM = String(childMarker?.last_name ?? 'unknown');
         const safeNameM = `${firstNameM}_${lastNameM}`.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
         const safeKeyM = String(templateContext.template.template_key || 'form').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
-        const submissionsDirM = path.join(config.dataPath, 'submissions', submission.id);
-        fs.mkdirSync(submissionsDirM, { recursive: true });
-        const absCompletedM = path.join(submissionsDirM, `${safeNameM}_${safeKeyM}_completed.pdf`);
-        fs.writeFileSync(absCompletedM, Buffer.from(filledMarker));
-        completedPdfPath = toRelativeDataPath(absCompletedM);
+        const keyM = `submissions/${submission.id}/${safeNameM}_${safeKeyM}_completed.pdf`;
+        await putObject(keyM, Buffer.from(filledMarker), 'application/pdf');
+        completedPdfPath = keyM;
       }
     } else if (templateContext?.template.acroform_pdf_path) {
       const templateWithGroups = getTemplateWithFields(templateContext.template.id, templateContext.template.practice_id) as Record<string, unknown>;
       const pdfBytes = await fillAcroformPdfWithResponses({
-        acroformPdfPath: resolveDataPath(templateContext.template.acroform_pdf_path),
+        acroformPdfBytes: await getObjectBuffer(templateContext.template.acroform_pdf_path),
         fields: templateContext.fields as Array<{
           field_id: string;
           field_name: string;
@@ -678,11 +661,9 @@ publicRouter.post('/submissions/:id/complete', (req, res) => {
         .replace(/^_+|_+$/g, '')
         .replace(/_+/g, '_');
 
-      const submissionsDir = path.join(config.dataPath, 'submissions', submission.id);
-      fs.mkdirSync(submissionsDir, { recursive: true });
-      const absoluteCompleted = path.join(submissionsDir, `${safeName}_${safeTemplateKey}_completed.pdf`);
-      fs.writeFileSync(absoluteCompleted, Buffer.from(pdfBytes));
-      completedPdfPath = toRelativeDataPath(absoluteCompleted);
+      const key = `submissions/${submission.id}/${safeName}_${safeTemplateKey}_completed.pdf`;
+      await putObject(key, Buffer.from(pdfBytes), 'application/pdf');
+      completedPdfPath = key;
     }
 
     const completed = completedPdfPath

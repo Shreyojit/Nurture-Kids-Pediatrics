@@ -19,9 +19,9 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
     : [
-        'https://admin.lonestarpediatrics.com',
-        'https://lonestarpediatrics.com',
-        'https://www.lonestarpediatrics.com',
+        'https://admin.nurturekidspediatrics.com',
+        'https://nurturekidspediatrics.com',
+        'https://www.nurturekidspediatrics.com',
         'http://localhost:5173',
         'http://localhost:5174',
       ],
@@ -38,28 +38,10 @@ export const config = {
     smtpPass: process.env.SMTP_PASS ?? '',
     fromAddress: process.env.EMAIL_FROM ?? process.env.SMTP_USER ?? '',
   },
+  aws: {
+    region: process.env.AWS_REGION ?? 'eu-north-1',
+    bucket: process.env.S3_BUCKET_NAME ?? 'nurturekidsfiles',
+  },
   rootPath,
   dataPath,
 };
-
-/**
- * Resolve a stored PDF path to an absolute filesystem path.
- * New paths are stored relative to dataPath (e.g. "templates/source/foo.pdf").
- * Legacy paths are absolute — returned as-is so existing local DBs keep working.
- */
-export function resolveDataPath(storedPath: string): string {
-  if (path.isAbsolute(storedPath)) return storedPath;
-  return path.join(config.dataPath, storedPath);
-}
-
-/**
- * Convert an absolute path under dataPath to a relative path for storage.
- * If the path is already relative, return it unchanged.
- */
-export function toRelativeDataPath(absolutePath: string): string {
-  if (!path.isAbsolute(absolutePath)) return absolutePath;
-  const rel = path.relative(config.dataPath, absolutePath);
-  // If it somehow resolves outside dataPath, store the absolute path as fallback
-  if (rel.startsWith('..')) return absolutePath;
-  return rel;
-}

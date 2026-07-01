@@ -1,30 +1,18 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import multer from 'multer';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
 import { fail, ok } from '../lib/response.js';
 import { db, nowIso } from '../db/database.js';
+import { putObject, getObjectBuffer, deleteObject, objectExists, streamObjectToResponse } from '../lib/s3Storage.js';
 
 export const pdfMarkerRouter = Router();
 
 // ── Storage ─────────────────────────────────────────────────────────────────
 
-const markerSourceDir = path.join(config.dataPath, 'templates', 'source');
-fs.mkdirSync(markerSourceDir, { recursive: true });
-
-const diskStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, markerSourceDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '.pdf') || '.pdf';
-    cb(null, `${Date.now()}_${randomUUID()}${ext}`);
-  },
-});
-
 const uploadPdf = multer({
-  storage: diskStorage,
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     const allowed = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
     if (!allowed) { cb(new Error('Only PDF files are allowed')); return; }
@@ -98,7 +86,7 @@ pdfMarkerRouter.get('/', (req, res) => {
 
 // ── Upload PDF → create marker template ─────────────────────────────────────
 
-pdfMarkerRouter.post('/upload', uploadPdf.single('pdf'), (req, res) => {
+pdfMarkerRouter.post('/upload', uploadPdf.single('pdf'), async (req, res) => {
   if (!req.file) { fail(res, 'VALIDATION_ERROR', 'PDF file required', 422); return; }
 
   const name = String(req.body.name ?? '').trim();
@@ -106,7 +94,9 @@ pdfMarkerRouter.post('/upload', uploadPdf.single('pdf'), (req, res) => {
 
   const templateKey = slugify(req.body.template_key ?? name) || `tpl_${Date.now()}`;
   const pageCount = req.body.page_count ? parseInt(String(req.body.page_count), 10) : null;
-  const relPath = toRelativeDataPath(req.file.path);
+  const ext = path.extname(req.file.originalname || '.pdf') || '.pdf';
+  const relPath = `templates/source/${Date.now()}_${randomUUID()}${ext}`;
+  await putObject(relPath, req.file.buffer, req.file.mimetype);
   const id = randomUUID();
   const now = nowIso();
 
@@ -145,7 +135,7 @@ pdfMarkerRouter.get('/:id', (req, res) => {
 
 // ── Serve source PDF ──────────────────────────────────────────────────────────
 
-pdfMarkerRouter.get('/:id/source', (req, res) => {
+pdfMarkerRouter.get('/:id/source', async (req, res) => {
   const row = db.prepare(`
     select source_pdf_path from pdf_templates
     where id = ? and practice_id = ? and is_marker_template = 1
@@ -153,11 +143,7 @@ pdfMarkerRouter.get('/:id/source', (req, res) => {
 
   if (!row) { fail(res, 'NOT_FOUND', 'Template not found', 404); return; }
 
-  const filePath = resolveDataPath(row.source_pdf_path);
-  if (!fs.existsSync(filePath)) { fail(res, 'NOT_FOUND', 'PDF file not found on disk', 404); return; }
-
-  res.setHeader('Content-Type', 'application/pdf');
-  res.sendFile(filePath);
+  await streamObjectToResponse(row.source_pdf_path, res, { contentType: 'application/pdf' });
 });
 
 // ── Add marker field ──────────────────────────────────────────────────────────
@@ -337,7 +323,7 @@ pdfMarkerRouter.get('/:id/export', (req, res) => {
 pdfMarkerRouter.post(
   '/import',
   uploadImport.fields([{ name: 'pdf', maxCount: 1 }, { name: 'json', maxCount: 1 }]),
-  (req, res) => {
+  async (req, res) => {
     const files = req.files as Record<string, Express.Multer.File[]> | undefined;
     const pdfFile = files?.pdf?.[0];
     const jsonFile = files?.json?.[0];
@@ -363,12 +349,10 @@ pdfMarkerRouter.post(
       fail(res, 'VALIDATION_ERROR', 'JSON must have { template: { name }, fields: [] }', 422); return;
     }
 
-    // Save PDF buffer to disk
+    // Upload PDF buffer to S3
     const ext = path.extname(pdfFile.originalname || '.pdf') || '.pdf';
-    const pdfFilename = `${Date.now()}_${randomUUID()}${ext}`;
-    const pdfAbsPath = path.join(markerSourceDir, pdfFilename);
-    fs.writeFileSync(pdfAbsPath, pdfFile.buffer);
-    const relPdfPath = toRelativeDataPath(pdfAbsPath);
+    const relPdfPath = `templates/source/${Date.now()}_${randomUUID()}${ext}`;
+    await putObject(relPdfPath, pdfFile.buffer, pdfFile.mimetype);
 
     const templateId = randomUUID();
     const now = nowIso();
@@ -446,11 +430,13 @@ pdfMarkerRouter.post('/:id/generate-filled', async (req, res) => {
 
   const responses: Record<string, string> = (req.body.responses as Record<string, string>) ?? {};
 
-  const pdfPath = resolveDataPath(template.source_pdf_path);
-  if (!fs.existsSync(pdfPath)) { fail(res, 'NOT_FOUND', 'Source PDF file not found on disk', 404); return; }
+  if (!(await objectExists(template.source_pdf_path))) {
+    fail(res, 'NOT_FOUND', 'Source PDF file not found', 404);
+    return;
+  }
 
   try {
-    const srcBytes = fs.readFileSync(pdfPath);
+    const srcBytes = await getObjectBuffer(template.source_pdf_path);
     const pdfDoc = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
 
     // Flatten any existing AcroForm so our overlay draws on top cleanly
@@ -527,7 +513,7 @@ pdfMarkerRouter.post('/:id/generate-filled', async (req, res) => {
 
 // ── Delete template ────────────────────────────────────────────────────────────
 
-pdfMarkerRouter.delete('/:id', (req, res) => {
+pdfMarkerRouter.delete('/:id', async (req, res) => {
   const template = db.prepare(`
     select * from pdf_templates where id = ? and practice_id = ? and is_marker_template = 1
   `).get(req.params.id, req.user!.practiceId) as TemplateRow | undefined;
@@ -538,8 +524,7 @@ pdfMarkerRouter.delete('/:id', (req, res) => {
 
   // Best-effort delete source PDF
   try {
-    const fp = resolveDataPath(template.source_pdf_path);
-    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    await deleteObject(template.source_pdf_path);
   } catch { /* non-fatal */ }
 
   ok(res, { deleted: true, id: template.id });

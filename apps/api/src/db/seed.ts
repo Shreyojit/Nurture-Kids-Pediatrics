@@ -34,7 +34,7 @@ export function seedDefaults(): void {
 }
 
 function _seedDefaults(): void {
-  const existingPractice = db.prepare('select id from practices where slug = ?').get('lonestarpediatrics') as
+  const existingPractice = db.prepare('select id from practices where slug = ?').get('nurturekidspediatrics') as
     | { id: string }
     | undefined;
 
@@ -46,8 +46,8 @@ function _seedDefaults(): void {
        values (?, ?, ?, ?, ?, ?)`,
     ).run(
       practiceId,
-      'Lone Star Pediatrics',
-      'lonestarpediatrics',
+      'Nurture Kids Pediatrics',
+      'nurturekidspediatrics',
       null,
       stringifyJson({
         enabled_visit_types: ['new_patient', 'well_child', 'sick', 'follow_up'],
@@ -63,14 +63,14 @@ function _seedDefaults(): void {
   if (existingById) {
     // Migrate email if it was set under an old practice name
     db.prepare('update staff_users set email = ?, practice_id = ? where id = ? and email != ?').run(
-      'admin@lonestarpediatrics.com',
+      'admin@nurturekidspediatrics.com',
       practiceId,
       SEED_STAFF_ID,
-      'admin@lonestarpediatrics.com',
+      'admin@nurturekidspediatrics.com',
     );
   } else {
     const existingByEmail = db.prepare('select id from staff_users where email = ?').get(
-      'admin@lonestarpediatrics.com',
+      'admin@nurturekidspediatrics.com',
     ) as { id: string } | undefined;
     if (!existingByEmail) {
       db.prepare(
@@ -78,7 +78,7 @@ function _seedDefaults(): void {
          values (?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         SEED_STAFF_ID,
-        'admin@lonestarpediatrics.com',
+        'admin@nurturekidspediatrics.com',
         hashPassword('Admin@12345'),
         practiceId,
         'admin',

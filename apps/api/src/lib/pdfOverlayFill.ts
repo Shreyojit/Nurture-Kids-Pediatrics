@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { FieldSchemaField, FieldSchemaOption, TemplateFieldSchema } from './fieldSchema.js';
 
@@ -67,16 +66,11 @@ function drawRadioCircle(page: ReturnType<PDFDocument['getPages']>[number], opti
 }
 
 export async function fillPdfWithOverlaySchema(input: {
-  sourcePdfPath: string;
+  sourcePdfBytes: Uint8Array;
   schema: TemplateFieldSchema;
   responses: Responses;
 }): Promise<Uint8Array> {
-  if (!fs.existsSync(input.sourcePdfPath)) {
-    throw new Error('Original PDF template not found');
-  }
-
-  const pdfBytes = fs.readFileSync(input.sourcePdfPath);
-  const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const pdfDoc = await PDFDocument.load(input.sourcePdfBytes, { ignoreEncryption: true });
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const pages = pdfDoc.getPages();
 

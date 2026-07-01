@@ -105,7 +105,7 @@ export function StaffRegisterPage({ onAuthenticated }: Props) {
                 id="reg-org"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
-                placeholder="e.g. Lone Star Pediatrics"
+                placeholder="e.g. Nurture Kids Pediatrics"
                 autoComplete="organization"
                 required
               />

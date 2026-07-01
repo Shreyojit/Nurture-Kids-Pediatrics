@@ -1,4 +1,4 @@
-name: Deploy to AWS EC2 — Lone Star Pediatrics
+name: Deploy PediPro Forms - PatientFormsNow
 
 on:
   push:
@@ -6,15 +6,16 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/web/**'
-      - 'e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 jobs:
-  # ── Deploy API ────────────────────────────────────────────────────────────────
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,72 +23,85 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install and build
-        working-directory: apps/api
-        run: |
-          for i in 1 2 3; do npm install --include=dev && break || { echo "npm install attempt $i failed, retrying…"; sleep 15; }; done
-          npm run build
+      - name: Install dependencies
+        run: npm install
 
-      - name: Prepare deployment package
-        run: |
-          mkdir -p deploy
-          cp -r apps/api/dist deploy/
-          jq 'del(.scripts) | del(.devDependencies)' apps/api/package.json > deploy/package.json
-          npm install --omit=dev --prefix deploy
-          tar -czf lsp-api.tar.gz -C deploy .
+      - name: Build API
+        run: npm run build -w apps/api
 
-      - name: Copy package to EC2
+      - name: Package API
+        run: |
+          mkdir -p deploy-api
+          cp -r apps/api/dist deploy-api/
+          cp apps/api/package.json deploy-api/package.json
+          cd deploy-api
+          npm install --omit=dev
+          cd ..
+          tar -czf pedipro-api.tar.gz -C deploy-api .
+
+      - name: Upload API to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: lsp-api.tar.gz
+          source: pedipro-api.tar.gz
           target: /home/ec2-user/
 
-      - name: Extract and restart
+      - name: Deploy API on EC2
         uses: appleboy/ssh-action@v1.0.3
         env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,EMAIL_FROM,FRONTEND_URL,CORS_ORIGIN,JWT_SECRET
+          envs: JWT_SECRET,FRONTEND_URL,CORS_ORIGIN,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,EMAIL_FROM
           script: |
-            pm2 stop lsp-api || true
-            sudo rm -rf /var/app/dist /var/app/node_modules
-            sudo mkdir -p /var/app
+            sudo mkdir -p /var/app/data /var/app/uploads
             sudo chown -R ec2-user:ec2-user /var/app
-            tar -xzf /home/ec2-user/lsp-api.tar.gz -C /var/app
-            rm /home/ec2-user/lsp-api.tar.gz
-            touch /var/app/.env
-            for key in SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS EMAIL_FROM FRONTEND_URL CORS_ORIGIN JWT_SECRET; do
-              val=$(eval echo \$$key)
-              sed -i "/^${key}=/d" /var/app/.env
-              echo "${key}=${val}" >> /var/app/.env
-            done
+
+            rm -rf /var/app/dist /var/app/package.json /var/app/node_modules
+
+            tar -xzf /home/ec2-user/pedipro-api.tar.gz -C /var/app
+            rm -f /home/ec2-user/pedipro-api.tar.gz
+
+            cat > /var/app/.env <<EOF
+            PORT=4000
+            NODE_ENV=production
+            DATA_PATH=/var/app/data
+            DB_PATH=/var/app/data/pediform.db
+            UPLOAD_DIR=/var/app/uploads
+            JWT_SECRET=${JWT_SECRET}
+            FRONTEND_URL=${FRONTEND_URL}
+            CORS_ORIGIN=${CORS_ORIGIN}
+            SMTP_HOST=${SMTP_HOST}
+            SMTP_PORT=${SMTP_PORT}
+            SMTP_USER=${SMTP_USER}
+            SMTP_PASS=${SMTP_PASS}
+            EMAIL_FROM=${EMAIL_FROM}
+            AWS_REGION=eu-north-1
+            S3_BUCKET_NAME=nurturekidsfiles
+            EOF
+
             chmod 600 /var/app/.env
-            DB_FILE=$(grep -E '^DB_PATH=' /var/app/.env | cut -d= -f2- | tr -d '"' | xargs)
-            if [ -z "$DB_FILE" ]; then DB_FILE="/var/app/data/lsp.db"; fi
-            if command -v sqlite3 >/dev/null 2>&1 && [ -f "$DB_FILE" ]; then
-              sqlite3 "$DB_FILE" "DELETE FROM pdf_template_fields WHERE template_id='3761fe08-1151-4f61-8411-75c78332ca2e'; DELETE FROM field_groups WHERE template_id='3761fe08-1151-4f61-8411-75c78332ca2e';"
-              sqlite3 "$DB_FILE" "DELETE FROM pdf_template_fields WHERE template_id='d5dc70ff-7d29-4f74-9aea-c387eec9e6c4'; DELETE FROM field_groups WHERE template_id='d5dc70ff-7d29-4f74-9aea-c387eec9e6c4';"
-            fi
-            pm2 restart lsp-api || pm2 start /var/app/dist/index.js --name lsp-api
+
+            cd /var/app
+            pm2 restart pedipro-api || pm2 start /var/app/dist/index.js --name pedipro-api
             pm2 save
 
-  # ── Deploy Frontend ───────────────────────────────────────────────────────────
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
+    needs: deploy-api
+
     steps:
       - uses: actions/checkout@v4
 
@@ -95,17 +109,19 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Build patient site
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build patient portal
         working-directory: apps/web
         env:
           VITE_APP_MODE: patient
           VITE_API_BASE_URL: ${{ secrets.API_BASE_URL }}
         run: |
-          for i in 1 2 3; do npm install && break || { echo "npm install attempt $i failed, retrying…"; sleep 15; }; done
           npm run build
           mv dist dist-patient
 
-      - name: Build admin site
+      - name: Build admin portal
         working-directory: apps/web
         env:
           VITE_APP_MODE: admin
@@ -114,75 +130,40 @@ jobs:
           npm run build
           mv dist dist-admin
 
-      - name: Package frontend builds
+      - name: Package frontend
         run: |
-          tar -czf frontend.tar.gz -C apps/web dist-patient dist-admin
+          tar -czf pedipro-frontend.tar.gz -C apps/web dist-patient dist-admin
 
-      - name: Copy to EC2
+      - name: Upload frontend to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: frontend.tar.gz
+          source: pedipro-frontend.tar.gz
           target: /home/ec2-user/
 
-      - name: Extract and configure Nginx
+      - name: Deploy frontend on EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            sudo mkdir -p /var/www/patient /var/www/admin
-            sudo chown -R ec2-user:ec2-user /var/www/patient /var/www/admin
-            tar -xzf /home/ec2-user/frontend.tar.gz -C /home/ec2-user/
+            sudo mkdir -p /var/www/patient /var/www/formsadmin
+            sudo chown -R ec2-user:ec2-user /var/www/patient /var/www/formsadmin
+
+            rm -rf /home/ec2-user/dist-patient /home/ec2-user/dist-admin
+
+            tar -xzf /home/ec2-user/pedipro-frontend.tar.gz -C /home/ec2-user
+            rm -f /home/ec2-user/pedipro-frontend.tar.gz
+
+            rm -rf /var/www/patient/* /var/www/formsadmin/*
+
             cp -r /home/ec2-user/dist-patient/. /var/www/patient/
-            cp -r /home/ec2-user/dist-admin/. /var/www/admin/
-            rm -rf /home/ec2-user/frontend.tar.gz /home/ec2-user/dist-patient /home/ec2-user/dist-admin
+            cp -r /home/ec2-user/dist-admin/. /var/www/formsadmin/
 
-            # Write the single unified nginx config (replaces any stale conf.d fragments)
-            sudo tee /etc/nginx/conf.d/lsp.conf > /dev/null <<'NGINXEOF'
-server {
-    listen 80;
-    server_name lonestarpediatrics.com www.lonestarpediatrics.com _;
-    client_max_body_size 100M;
-    root /var/www/patient;
-    index index.html;
-    location ~* \.mjs$ { default_type application/javascript; try_files $uri =404; }
-    location /assets/ { try_files $uri =404; }
-    location /api/ {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    location / { try_files $uri $uri/ /index.html; }
-}
+            rm -rf /home/ec2-user/dist-patient /home/ec2-user/dist-admin
 
-server {
-    listen 3001;
-    server_name admin.lonestarpediatrics.com _;
-    client_max_body_size 100M;
-    root /var/www/admin;
-    index index.html;
-    location ~* \.mjs$ { default_type application/javascript; try_files $uri =404; }
-    location /assets/ { try_files $uri =404; }
-    location /api/ {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    location / { try_files $uri $uri/ /index.html; }
-}
-NGINXEOF
-
-            # Remove stale per-site fragments so there are no conflicting server blocks
-            sudo rm -f /etc/nginx/conf.d/patient.conf /etc/nginx/conf.d/admin.conf /etc/nginx/conf.d/api.conf
-
-            sudo nginx -t && sudo systemctl reload nginx
+            sudo nginx -t
+            sudo systemctl reload nginx

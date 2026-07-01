@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import {
   extractMchatPdfMarkers,
   normalizeMchatMarkerGroup,
@@ -44,7 +43,7 @@ function markerCenter(marker: PdfMarkerField): { page: number; x: number; y: num
 }
 
 export async function fillMchatPdfWithCheckmarks(input: {
-  sourcePdfPath: string;
+  sourcePdfBytes: Uint8Array;
   dbFields: Array<Record<string, unknown>>;
   responses: Responses;
   /** Template display name; used to detect bilingual PDFs when layout is `auto`. */
@@ -52,8 +51,7 @@ export async function fillMchatPdfWithCheckmarks(input: {
   mchatPdfLayout?: MchatPdfLayoutMode | 'auto';
 }): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
-  const bytes = fs.readFileSync(input.sourcePdfPath);
-  const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const pdfDoc = await PDFDocument.load(input.sourcePdfBytes, { ignoreEncryption: true });
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   const layout = resolveMchatPdfLayoutMode({

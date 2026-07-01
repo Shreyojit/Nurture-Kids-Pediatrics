@@ -1,8 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import fs from 'node:fs';
-import path from 'node:path';
 import { config } from './config.js';
 import { runMigrations } from './db/migrate.js';
 import { seedDefaults } from './db/seed.js';
@@ -21,12 +19,9 @@ import { authMiddleware } from './middleware/auth.js';
 import { fail } from './lib/response.js';
 import { expireStaleAssignments } from './db/assignmentQueries.js';
 
-fs.mkdirSync(path.join(config.dataPath, 'templates', 'source'), { recursive: true });
-fs.mkdirSync(path.join(config.dataPath, 'patient-documents'), { recursive: true });
-
 runMigrations();
 seedDefaults();
-seedTemplates();
+await seedTemplates();
 
 // Expire stale in_progress sessions on startup and every 6 hours
 expireStaleSubmissions(48);

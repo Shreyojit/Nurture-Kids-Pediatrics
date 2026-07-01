@@ -4,7 +4,6 @@
  * Practice-scoped slug routes remain for backward compatibility.
  */
 import { Router } from 'express';
-import fs from 'node:fs';
 import { z } from 'zod';
 import { ok, fail } from '../lib/response.js';
 import { findPracticeBySlug, findPatientsByIdentity, readSubmissionForExport } from '../db/queries.js';
@@ -27,7 +26,7 @@ import { hasOverlayFields, parseTemplateFieldSchema } from '../lib/fieldSchema.j
 import { fillPdfWithOverlaySchema } from '../lib/pdfOverlayFill.js';
 import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 import { getTemplateBySubmissionContext } from '../db/templateQueries.js';
-import { resolveDataPath } from '../config.js';
+import { getObjectBuffer, objectExists, streamObjectToResponse } from '../lib/s3Storage.js';
 
 export const patientPortalRouter = Router();
 
@@ -162,7 +161,7 @@ patientPortalRouter.post('/access', (req, res) => {
 });
 
 /** GET /api/patient-portal/documents/:id/download — identity-verified download (any practice). */
-patientPortalRouter.get('/documents/:id/download', (req, res) => {
+patientPortalRouter.get('/documents/:id/download', async (req, res) => {
   const { first_name, last_name, dob } = req.query as Record<string, string>;
   if (!first_name || !last_name || !dob) {
     fail(res, 'VALIDATION_ERROR', 'first_name, last_name, and dob are required', 422);
@@ -175,13 +174,7 @@ patientPortalRouter.get('/documents/:id/download', (req, res) => {
     return;
   }
 
-  const absPath = resolveDocumentPath(doc);
-  if (!fs.existsSync(absPath)) {
-    fail(res, 'NOT_FOUND', 'File not found on server', 404);
-    return;
-  }
-
-  res.download(absPath, doc.original_filename);
+  await streamObjectToResponse(resolveDocumentPath(doc), res, { download: true, filename: doc.original_filename });
 });
 
 /** GET /api/patient-portal/submissions/:id/pdf — patient self-download of a completed submission. */
@@ -225,13 +218,13 @@ patientPortalRouter.get('/submissions/:id/pdf', async (req, res) => {
       templateContext.template.source_pdf_path
     ) {
       pdfBytes = await fillPdfWithOverlaySchema({
-        sourcePdfPath: resolveDataPath(templateContext.template.source_pdf_path),
+        sourcePdfBytes: await getObjectBuffer(templateContext.template.source_pdf_path),
         schema: overlaySchema,
         responses: responseMap,
       });
     } else if (templateContext?.template.acroform_pdf_path) {
       pdfBytes = await fillAcroformPdfWithResponses({
-        acroformPdfPath: resolveDataPath(templateContext.template.acroform_pdf_path),
+        acroformPdfBytes: await getObjectBuffer(templateContext.template.acroform_pdf_path),
         fields: templateContext.fields as Array<{
           field_id: string; field_name: string; field_type: string; acro_field_name: string;
           page_number: number; x: number; y: number; width: number; height: number;
@@ -244,11 +237,9 @@ patientPortalRouter.get('/submissions/:id/pdf', async (req, res) => {
       });
     } else if (templateContext?.template.is_marker_template) {
       // Visual-markers forms: the filled PDF was written to completed_pdf_path at submission time.
-      const completedPath = exported.completed_pdf_path
-        ? resolveDataPath(String(exported.completed_pdf_path))
-        : null;
-      if (completedPath && fs.existsSync(completedPath)) {
-        pdfBytes = new Uint8Array(fs.readFileSync(completedPath));
+      const completedKey = exported.completed_pdf_path ? String(exported.completed_pdf_path) : null;
+      if (completedKey && (await objectExists(completedKey))) {
+        pdfBytes = new Uint8Array(await getObjectBuffer(completedKey));
       } else {
         pdfBytes = await generateResponsesSummaryPdf({
           title: String(templateContext.template.name ?? exported.form_id ?? 'Form Responses'),
@@ -335,7 +326,7 @@ patientPortalRouter.post('/:slug/access', (req, res) => {
 });
 
 /** GET /api/patient-portal/:slug/documents/:id/download — legacy practice-scoped download. */
-patientPortalRouter.get('/:slug/documents/:id/download', (req, res) => {
+patientPortalRouter.get('/:slug/documents/:id/download', async (req, res) => {
   const { first_name, last_name, dob } = req.query as Record<string, string>;
   if (!first_name || !last_name || !dob) {
     fail(res, 'VALIDATION_ERROR', 'first_name, last_name, and dob are required', 422);
@@ -354,11 +345,5 @@ patientPortalRouter.get('/:slug/documents/:id/download', (req, res) => {
     return;
   }
 
-  const absPath = resolveDocumentPath(doc);
-  if (!fs.existsSync(absPath)) {
-    fail(res, 'NOT_FOUND', 'File not found on server', 404);
-    return;
-  }
-
-  res.download(absPath, doc.original_filename);
+  await streamObjectToResponse(resolveDocumentPath(doc), res, { download: true, filename: doc.original_filename });
 });

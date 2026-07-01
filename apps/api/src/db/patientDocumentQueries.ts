@@ -1,8 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { db, nowIso } from './database.js';
-import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
-import path from 'node:path';
-import fs from 'node:fs';
 
 export type PatientDocumentRow = {
   id: string;
@@ -15,10 +12,9 @@ export type PatientDocumentRow = {
   uploaded_at: string;
 };
 
-export function ensureDocumentStorageDir(practiceId: string, patientId: string): string {
-  const dir = path.join(config.dataPath, 'patient-documents', practiceId, patientId);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+/** Builds the S3 key prefix for a patient's documents (no local directory needed). */
+export function documentStorageKeyPrefix(practiceId: string, patientId: string): string {
+  return `patient-documents/${practiceId}/${patientId}`;
 }
 
 export function insertPatientDocument(input: {
@@ -26,17 +22,16 @@ export function insertPatientDocument(input: {
   patientId: string;
   documentType: string;
   originalFilename: string;
-  absolutePath: string;
+  storedKey: string;
   uploadedBy: string;
 }): PatientDocumentRow {
   const id = randomUUID();
   const now = nowIso();
-  const storedPath = toRelativeDataPath(input.absolutePath);
   db.prepare(
     `insert into patient_documents
       (id, practice_id, patient_id, document_type, original_filename, stored_path, uploaded_by, uploaded_at)
      values (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.practiceId, input.patientId, input.documentType, input.originalFilename, storedPath, input.uploadedBy, now);
+  ).run(id, input.practiceId, input.patientId, input.documentType, input.originalFilename, input.storedKey, input.uploadedBy, now);
   return getPatientDocumentById(id, input.practiceId)!;
 }
 
@@ -101,7 +96,7 @@ export function getDocumentForPatientDownload(
 }
 
 export function resolveDocumentPath(doc: PatientDocumentRow): string {
-  return resolveDataPath(doc.stored_path);
+  return doc.stored_path;
 }
 
 export function deletePatientDocument(id: string, practiceId: string): void {

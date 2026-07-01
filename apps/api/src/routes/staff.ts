@@ -37,20 +37,20 @@ import {
 } from '../db/queries.js';
 import { provisionDefaultTemplatesForPractice } from '../db/seedTemplates.js';
 import { db, parseJson } from '../db/database.js';
-import { config, resolveDataPath } from '../config.js';
+import { config } from '../config.js';
 import { ensurePatientPortalToken, regeneratePatientPortalToken } from '../db/portalQueries.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { parsePatientExcelBuffer } from '../lib/patientExcelImport.js';
-import fs from 'node:fs';
 import path from 'node:path';
 import {
-  ensureDocumentStorageDir,
+  documentStorageKeyPrefix,
   insertPatientDocument,
   listDocumentsForStaff,
   getPatientDocumentById,
   resolveDocumentPath,
   deletePatientDocument,
 } from '../db/patientDocumentQueries.js';
+import { putObject, getObjectBuffer, deleteObject, objectExists, streamObjectToResponse } from '../lib/s3Storage.js';
 
 export const staffRouter = Router();
 
@@ -704,7 +704,7 @@ staffRouter.get('/documents', (req, res) => {
 });
 
 /** POST /api/staff/documents — upload a file for a patient. */
-staffRouter.post('/documents', documentMemoryUpload.single('file'), (req, res) => {
+staffRouter.post('/documents', documentMemoryUpload.single('file'), async (req, res) => {
   const { patient_id, document_type } = req.body as Record<string, string>;
   if (!patient_id || !document_type || !req.file) {
     fail(res, 'VALIDATION_ERROR', 'patient_id, document_type, and file are required', 422);
@@ -713,39 +713,35 @@ staffRouter.post('/documents', documentMemoryUpload.single('file'), (req, res) =
   const patient = getPatientDetail(patient_id, req.user!.practiceId);
   if (!patient) { fail(res, 'NOT_FOUND', 'Patient not found', 404); return; }
 
-  const dir = ensureDocumentStorageDir(req.user!.practiceId, patient_id);
   const ext = path.extname(req.file.originalname) || '';
-  const stored = path.join(dir, `${Date.now()}${ext}`);
-  fs.writeFileSync(stored, req.file.buffer);
+  const storedKey = `${documentStorageKeyPrefix(req.user!.practiceId, patient_id)}/${Date.now()}${ext}`;
+  await putObject(storedKey, req.file.buffer, req.file.mimetype);
 
   const doc = insertPatientDocument({
     practiceId: req.user!.practiceId,
     patientId: patient_id,
     documentType: document_type,
     originalFilename: req.file.originalname,
-    absolutePath: stored,
+    storedKey,
     uploadedBy: req.user!.id,
   });
   ok(res, doc);
 });
 
 /** DELETE /api/staff/documents/:id — delete a patient document. */
-staffRouter.delete('/documents/:id', (req, res) => {
+staffRouter.delete('/documents/:id', async (req, res) => {
   const doc = getPatientDocumentById(req.params.id, req.user!.practiceId);
   if (!doc) { fail(res, 'NOT_FOUND', 'Document not found', 404); return; }
-  const absPath = resolveDocumentPath(doc);
-  if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+  await deleteObject(resolveDocumentPath(doc));
   deletePatientDocument(req.params.id, req.user!.practiceId);
   ok(res, { deleted: true });
 });
 
 /** GET /api/staff/documents/:id/download — staff download of a patient document. */
-staffRouter.get('/documents/:id/download', (req, res) => {
+staffRouter.get('/documents/:id/download', async (req, res) => {
   const doc = getPatientDocumentById(req.params.id, req.user!.practiceId);
   if (!doc) { fail(res, 'NOT_FOUND', 'Document not found', 404); return; }
-  const absPath = resolveDocumentPath(doc);
-  if (!fs.existsSync(absPath)) { fail(res, 'NOT_FOUND', 'File not found on server', 404); return; }
-  res.download(absPath, doc.original_filename);
+  await streamObjectToResponse(resolveDocumentPath(doc), res, { download: true, filename: doc.original_filename });
 });
 
 staffRouter.get('/patients/:id/portal-link', async (req, res) => {
@@ -989,13 +985,13 @@ staffRouter.get('/submissions/:id/pdf', async (req, res) => {
       templateContext.template.source_pdf_path
     ) {
       pdfBytes = await fillPdfWithOverlaySchema({
-        sourcePdfPath: resolveDataPath(templateContext.template.source_pdf_path),
+        sourcePdfBytes: await getObjectBuffer(templateContext.template.source_pdf_path),
         schema: overlaySchema,
         responses: responseMap,
       });
     } else if (templateContext?.template.acroform_pdf_path) {
       pdfBytes = await fillAcroformPdfWithResponses({
-        acroformPdfPath: resolveDataPath(templateContext.template.acroform_pdf_path),
+        acroformPdfBytes: await getObjectBuffer(templateContext.template.acroform_pdf_path),
         fields: templateContext.fields as Array<{
           field_id: string;
           field_name: string;
@@ -1020,11 +1016,9 @@ staffRouter.get('/submissions/:id/pdf', async (req, res) => {
       });
     } else if (templateContext?.template.is_marker_template) {
       // Visual-markers forms: the filled PDF was written to completed_pdf_path at submission time.
-      const completedPath = exported.completed_pdf_path
-        ? resolveDataPath(String(exported.completed_pdf_path))
-        : null;
-      if (completedPath && fs.existsSync(completedPath)) {
-        pdfBytes = new Uint8Array(fs.readFileSync(completedPath));
+      const completedKey = exported.completed_pdf_path ? String(exported.completed_pdf_path) : null;
+      if (completedKey && (await objectExists(completedKey))) {
+        pdfBytes = new Uint8Array(await getObjectBuffer(completedKey));
       } else {
         pdfBytes = await generateResponsesSummaryPdf({
           title: String(templateContext.template.name ?? exported.form_id ?? 'Form Responses'),

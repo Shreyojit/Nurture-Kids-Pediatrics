@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import fs from 'node:fs';
 import { fail, ok } from '../lib/response.js';
 import { assertCan } from '../lib/rbac.js';
 import {
@@ -9,10 +8,11 @@ import {
   listDocumentsForStaff,
   getPatientDocumentById,
   resolveDocumentPath,
-  ensureDocumentStorageDir,
+  documentStorageKeyPrefix,
 } from '../db/patientDocumentQueries.js';
 import { isPatientDocumentType } from '../lib/patientDocumentTypes.js';
 import { db } from '../db/database.js';
+import { putObject, deleteObject, streamObjectToResponse } from '../lib/s3Storage.js';
 
 export const staffDocumentsRouter = Router();
 
@@ -64,7 +64,7 @@ staffDocumentsRouter.post(
       next();
     });
   },
-  (req, res) => {
+  async (req, res) => {
     try {
       assertCan(req.user!.role, 'documents:upload');
     } catch {
@@ -90,18 +90,17 @@ staffDocumentsRouter.post(
     const rawType = typeof req.body?.document_type === 'string' ? req.body.document_type : 'other';
     const documentType = isPatientDocumentType(rawType) ? rawType : 'other';
 
-    const dir = ensureDocumentStorageDir(req.user!.practiceId, patientId);
     const ext = path.extname(req.file.originalname) || '.pdf';
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    const absolutePath = path.join(dir, filename);
-    fs.writeFileSync(absolutePath, req.file.buffer);
+    const storedKey = `${documentStorageKeyPrefix(req.user!.practiceId, patientId)}/${filename}`;
+    await putObject(storedKey, req.file.buffer, req.file.mimetype);
 
     const doc = insertPatientDocument({
       practiceId: req.user!.practiceId,
       patientId,
       documentType,
       originalFilename: req.file.originalname,
-      absolutePath,
+      storedKey,
       uploadedBy: req.user!.id,
     });
 
@@ -110,7 +109,7 @@ staffDocumentsRouter.post(
 );
 
 /** GET /api/staff/documents/:id/download */
-staffDocumentsRouter.get('/:id/download', (req, res) => {
+staffDocumentsRouter.get('/:id/download', async (req, res) => {
   try {
     assertCan(req.user!.role, 'documents:read');
   } catch {
@@ -124,17 +123,11 @@ staffDocumentsRouter.get('/:id/download', (req, res) => {
     return;
   }
 
-  const absPath = resolveDocumentPath(doc);
-  if (!fs.existsSync(absPath)) {
-    fail(res, 'NOT_FOUND', 'File not found on disk', 404);
-    return;
-  }
-
-  res.download(absPath, doc.original_filename);
+  await streamObjectToResponse(resolveDocumentPath(doc), res, { download: true, filename: doc.original_filename });
 });
 
 /** DELETE /api/staff/documents/:id */
-staffDocumentsRouter.delete('/:id', (req, res) => {
+staffDocumentsRouter.delete('/:id', async (req, res) => {
   try {
     assertCan(req.user!.role, 'documents:delete');
   } catch {
@@ -149,8 +142,7 @@ staffDocumentsRouter.delete('/:id', (req, res) => {
   }
 
   try {
-    const absPath = resolveDocumentPath(doc);
-    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+    await deleteObject(resolveDocumentPath(doc));
   } catch {
     // file already gone
   }

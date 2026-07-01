@@ -262,17 +262,12 @@ function hasMeaningfulResponseValue(value: string | boolean | null): boolean {
 }
 
 export async function fillAcroformPdfWithResponses(input: {
-  acroformPdfPath: string;
+  acroformPdfBytes: Uint8Array;
   fields: AcroField[];
   responses: Responses;
   groups?: AcroGroup[];
 }): Promise<Uint8Array> {
-  if (!fs.existsSync(input.acroformPdfPath)) {
-    throw new Error('AcroForm PDF not found.');
-  }
-
-  const src = fs.readFileSync(input.acroformPdfPath);
-  const pdfDoc = await loadPdfDocument(src);
+  const pdfDoc = await loadPdfDocument(input.acroformPdfBytes);
   const form = pdfDoc.getForm();
 
   // Build group lookup: id → acro_group_name

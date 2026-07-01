@@ -12,11 +12,10 @@
  *   5. Upserts the template into the local DB and marks it published
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { config } from '../config.js';
+import { putObject } from '../lib/s3Storage.js';
 
 const PROD_API = 'https://api.pediformpro.com';
 const LOCAL_PRACTICE_ID = 'a1b2c3d4-0000-4000-8000-100000000001';
@@ -94,10 +93,8 @@ async function main() {
 
   console.log(`Using template: ${full.name} (${full.template_key} v${full.version})`);
 
-  // 4. Download the source PDF
-  const sourceDir = path.join(config.dataPath, 'templates', 'source');
-  fs.mkdirSync(sourceDir, { recursive: true });
-  const localPdfPath = path.join(sourceDir, 'mchat_source.pdf');
+  // 4. Download the source PDF and upload it to S3
+  const relativePdfPath = 'templates/source/mchat_source.pdf';
 
   console.log('Downloading source PDF...');
   const pdfRes = await fetch(`${PROD_API}/api/staff/templates/${full.id}/source`, { headers });
@@ -105,11 +102,10 @@ async function main() {
     throw new Error(`Failed to download source PDF: ${pdfRes.status} ${pdfRes.statusText}`);
   }
   const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-  fs.writeFileSync(localPdfPath, pdfBuffer);
-  console.log(`  ✓ Saved to ${localPdfPath} (${Math.round(pdfBuffer.length / 1024)} KB)`);
+  await putObject(relativePdfPath, pdfBuffer, 'application/pdf');
+  console.log(`  ✓ Uploaded to s3://${config.aws.bucket}/${relativePdfPath} (${Math.round(pdfBuffer.length / 1024)} KB)`);
 
   // 5. Upsert into local DB via sqlite3 CLI (avoids Node version conflicts with better-sqlite3)
-  const relativePdfPath = 'templates/source/mchat_source.pdf';
   const now = new Date().toISOString();
   const schemaJson = (full.field_schema_json ?? '{}').replace(/'/g, "''");
 

@@ -1,12 +1,11 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import multer from 'multer';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { z } from 'zod';
-import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
 import { fail, ok } from '../lib/response.js';
+import { putObject, getObjectBuffer, deleteObject, objectExists, streamObjectToResponse } from '../lib/s3Storage.js';
 import { authMiddleware } from '../middleware/auth.js';
 import {
   createAsqTemplate,
@@ -34,22 +33,8 @@ export const asqPublicRouter = Router();
 
 // ─── File storage ──────────────────────────────────────────────────────────
 
-const asqUploadDir = path.join(config.dataPath, 'asq', 'pdfs');
-fs.mkdirSync(asqUploadDir, { recursive: true });
-
-const asqGeneratedDir = path.join(config.dataPath, 'asq', 'generated');
-fs.mkdirSync(asqGeneratedDir, { recursive: true });
-
-const storageSource = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, asqUploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '.pdf') || '.pdf';
-    cb(null, `${Date.now()}_${randomUUID()}${ext}`);
-  },
-});
-
 const uploadPdf = multer({
-  storage: storageSource,
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.includes('pdf')) {
       cb(new Error('Only PDF files are allowed'));
@@ -88,7 +73,7 @@ asqStaffRouter.get('/', (req, res) => {
 });
 
 // Upload PDF and create template
-asqStaffRouter.post('/upload', uploadPdf.single('file'), (req, res) => {
+asqStaffRouter.post('/upload', uploadPdf.single('file'), async (req, res) => {
   if (!req.file) {
     fail(res, 'VALIDATION_ERROR', 'PDF file is required', 422);
     return;
@@ -105,14 +90,17 @@ asqStaffRouter.post('/upload', uploadPdf.single('file'), (req, res) => {
     return;
   }
 
-  const relPath = toRelativeDataPath(req.file.path);
+  const ext = path.extname(req.file.originalname || '.pdf') || '.pdf';
+  const storedFileName = `${Date.now()}_${randomUUID()}${ext}`;
+  const relPath = `asq/pdfs/${storedFileName}`;
+  await putObject(relPath, req.file.buffer, req.file.mimetype);
   const tmpl = createAsqTemplate({
     practiceId: req.user!.practiceId,
     name: parsed.data.name,
     templateType: parsed.data.template_type,
     version: parsed.data.version,
     originalFileName: req.file.originalname,
-    storedFileName: path.basename(req.file.path),
+    storedFileName,
     filePath: relPath,
     createdBy: req.user!.id,
   });
@@ -129,21 +117,18 @@ asqStaffRouter.get('/:id', (req, res) => {
 });
 
 // Serve PDF file
-asqStaffRouter.get('/:id/pdf', (req, res) => {
+asqStaffRouter.get('/:id/pdf', async (req, res) => {
   const tmpl = getAsqTemplate(req.params.id, req.user!.practiceId);
   if (!tmpl) { fail(res, 'NOT_FOUND', 'Template not found', 404); return; }
-  const abs = resolveDataPath(tmpl.file_path);
-  if (!fs.existsSync(abs)) { fail(res, 'NOT_FOUND', 'PDF file not found', 404); return; }
-  res.sendFile(abs);
+  await streamObjectToResponse(tmpl.file_path, res, { contentType: 'application/pdf' });
 });
 
 // Delete template
-asqStaffRouter.delete('/:id', (req, res) => {
+asqStaffRouter.delete('/:id', async (req, res) => {
   const tmpl = getAsqTemplate(req.params.id, req.user!.practiceId);
   if (!tmpl) { fail(res, 'NOT_FOUND', 'Template not found', 404); return; }
   try {
-    const abs = resolveDataPath(tmpl.file_path);
-    if (fs.existsSync(abs)) fs.unlinkSync(abs);
+    await deleteObject(tmpl.file_path);
   } catch { /* non-blocking cleanup */ }
   deleteAsqTemplate(req.params.id, req.user!.practiceId);
   ok(res, { deleted: true, id: req.params.id });
@@ -261,7 +246,7 @@ asqStaffRouter.post(
     { name: 'pdf', maxCount: 1 },
     { name: 'json', maxCount: 1 },
   ]),
-  (req, res) => {
+  async (req, res) => {
     const files = req.files as Record<string, Express.Multer.File[]> | undefined;
     const pdfFile = files?.['pdf']?.[0];
     const jsonFile = files?.['json']?.[0];
@@ -304,11 +289,11 @@ asqStaffRouter.post(
       return;
     }
 
-    // Write PDF to disk
+    // Upload PDF to S3
     const ext = path.extname(pdfFile.originalname || '.pdf') || '.pdf';
     const storedName = `${Date.now()}_${randomUUID()}${ext}`;
-    const destPath = path.join(asqUploadDir, storedName);
-    fs.writeFileSync(destPath, pdfFile.buffer);
+    const relPath = `asq/pdfs/${storedName}`;
+    await putObject(relPath, pdfFile.buffer, pdfFile.mimetype);
 
     const tmpl = createAsqTemplate({
       practiceId: req.user!.practiceId,
@@ -317,7 +302,7 @@ asqStaffRouter.post(
       version: mapping.template_version ?? 1,
       originalFileName: pdfFile.originalname,
       storedFileName: storedName,
-      filePath: toRelativeDataPath(destPath),
+      filePath: relPath,
       createdBy: req.user!.id,
     });
 
@@ -426,8 +411,7 @@ asqPublicRouter.post('/:id/generate-pdf', async (req, res) => {
   const tmpl = getAsqTemplate(sub.template_id, sub.practice_id);
   if (!tmpl) { fail(res, 'NOT_FOUND', 'Template not found', 404); return; }
 
-  const pdfPath = resolveDataPath(tmpl.file_path);
-  if (!fs.existsSync(pdfPath)) {
+  if (!(await objectExists(tmpl.file_path))) {
     fail(res, 'NOT_FOUND', 'Source PDF not found', 404);
     return;
   }
@@ -438,7 +422,7 @@ asqPublicRouter.post('/:id/generate-pdf', async (req, res) => {
   for (const v of values) responseMap[v.field_key] = v.value;
 
   try {
-    const pdfBytes = fs.readFileSync(pdfPath);
+    const pdfBytes = await getObjectBuffer(tmpl.file_path);
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const pages = pdfDoc.getPages();
@@ -502,9 +486,8 @@ asqPublicRouter.post('/:id/generate-pdf', async (req, res) => {
 
     const filledBytes = await pdfDoc.save();
     const outName = `asq_filled_${sub.id}.pdf`;
-    const outPath = path.join(asqGeneratedDir, outName);
-    fs.writeFileSync(outPath, filledBytes);
-    const relPath = toRelativeDataPath(outPath);
+    const relPath = `asq/generated/${outName}`;
+    await putObject(relPath, Buffer.from(filledBytes), 'application/pdf');
     setAsqSubmissionGeneratedPdf(sub.id, relPath);
 
     ok(res, {
@@ -517,18 +500,15 @@ asqPublicRouter.post('/:id/generate-pdf', async (req, res) => {
 });
 
 // Download generated PDF
-asqPublicRouter.get('/:id/download', (req, res) => {
+asqPublicRouter.get('/:id/download', async (req, res) => {
   const sub = getAsqSubmission(req.params.id);
   if (!sub) { fail(res, 'NOT_FOUND', 'Submission not found', 404); return; }
   if (!sub.generated_pdf_path) {
     fail(res, 'NOT_FOUND', 'No generated PDF yet. Call generate-pdf first.', 404);
     return;
   }
-  const abs = resolveDataPath(sub.generated_pdf_path);
-  if (!fs.existsSync(abs)) {
-    fail(res, 'NOT_FOUND', 'Generated PDF file missing from disk', 404);
-    return;
-  }
-  res.setHeader('Content-Disposition', `attachment; filename="asq_filled_${sub.id}.pdf"`);
-  res.sendFile(abs);
+  await streamObjectToResponse(sub.generated_pdf_path, res, {
+    download: true,
+    filename: `asq_filled_${sub.id}.pdf`,
+  });
 });

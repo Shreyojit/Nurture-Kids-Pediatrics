@@ -1,11 +1,19 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { config, resolveDataPath, toRelativeDataPath } from '../config.js';
 import { fail, ok } from '../lib/response.js';
+import {
+  putObject,
+  getObjectBuffer,
+  deleteObject,
+  deleteObjectsWithPrefix,
+  objectExists,
+  streamObjectToResponse,
+} from '../lib/s3Storage.js';
 import {
   addTemplateField,
   clearTemplateFieldsAndGroups,
@@ -37,6 +45,35 @@ import { isMchatTemplateKey } from '../lib/mchatRDefinition.js';
 
 export const staffTemplatesRouter = Router();
 
+// ─── Acroform generation (via S3) ─────────────────────────────────────────────
+// Ghostscript normalization requires real files on disk, so the source PDF is
+// downloaded to a temp scratch dir, processed, and the result uploaded to S3.
+// The temp dir is deleted before this function returns — nothing persists locally.
+async function generateAcroformPdf(input: {
+  sourceKey: string;
+  outputKey: string;
+  fields: any[];
+  groups: any[];
+}): Promise<void> {
+  const sourceBytes = await getObjectBuffer(input.sourceKey);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'acroform-gen-'));
+  const tmpSourcePath = path.join(tempDir, 'source.pdf');
+  const tmpOutputPath = path.join(tempDir, 'output.pdf');
+  try {
+    fs.writeFileSync(tmpSourcePath, sourceBytes);
+    await buildAcroformPdfFromFieldDefinitions({
+      sourcePdfPath: tmpSourcePath,
+      outputPdfPath: tmpOutputPath,
+      fields: input.fields,
+      groups: input.groups,
+    });
+    const outputBytes = fs.readFileSync(tmpOutputPath);
+    await putObject(input.outputKey, outputBytes, 'application/pdf');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 // ─── Acroform auto-rebuild ────────────────────────────────────────────────────
 // When fields or groups change on a template that already has an acroform PDF,
 // rebuild it in the background so the acroform stays in sync with the field list.
@@ -49,10 +86,9 @@ function queueAcroformRebuild(templateId: string, practiceId: string): void {
   setImmediate(async () => {
     try {
       const full = getTemplateWithFields(templateId, practiceId) as any;
-      const outPath = resolveDataPath(full.acroform_pdf_path as string);
-      await buildAcroformPdfFromFieldDefinitions({
-        sourcePdfPath: resolveDataPath(full.source_pdf_path as string),
-        outputPdfPath: outPath,
+      await generateAcroformPdf({
+        sourceKey: full.source_pdf_path as string,
+        outputKey: full.acroform_pdf_path as string,
         fields: full.fields,
         groups: full.groups ?? [],
       });
@@ -62,19 +98,8 @@ function queueAcroformRebuild(templateId: string, practiceId: string): void {
   });
 }
 
-const sourceUploadDir = path.join(config.dataPath, 'templates', 'source');
-fs.mkdirSync(sourceUploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, sourceUploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '.pdf') || '.pdf';
-    cb(null, `${Date.now()}_${randomUUID()}${ext}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.includes('pdf')) {
       cb(new Error('Only PDF upload is allowed'));
@@ -89,7 +114,7 @@ staffTemplatesRouter.get('/', (req, res) => {
   ok(res, templates);
 });
 
-staffTemplatesRouter.post('/upload-source', upload.single('file'), (req, res) => {
+staffTemplatesRouter.post('/upload-source', upload.single('file'), async (req, res) => {
   if (!req.file) {
     fail(res, 'VALIDATION_ERROR', 'PDF file is required', 422);
     return;
@@ -105,11 +130,15 @@ staffTemplatesRouter.post('/upload-source', upload.single('file'), (req, res) =>
     return;
   }
 
+  const ext = path.extname(req.file.originalname || '.pdf') || '.pdf';
+  const sourceKey = `templates/source/${Date.now()}_${randomUUID()}${ext}`;
+  await putObject(sourceKey, req.file.buffer, req.file.mimetype);
+
   const template = createTemplate({
     practiceId: req.user!.practiceId,
     templateKey: parsed.data.template_key,
     name: parsed.data.name,
-    sourcePdfPath: toRelativeDataPath(req.file.path),
+    sourcePdfPath: sourceKey,
     createdBy: req.user!.id,
   });
 
@@ -125,7 +154,7 @@ staffTemplatesRouter.get('/:id', (req, res) => {
   }
 });
 
-staffTemplatesRouter.delete('/:id', (req, res) => {
+staffTemplatesRouter.delete('/:id', async (req, res) => {
   try {
     const deleted = deleteTemplateVersion({
       templateId: req.params.id,
@@ -133,18 +162,10 @@ staffTemplatesRouter.delete('/:id', (req, res) => {
     });
 
     try {
-      if (deleted.source_pdf_path && fs.existsSync(resolveDataPath(deleted.source_pdf_path))) {
-        fs.unlinkSync(resolveDataPath(deleted.source_pdf_path));
-      }
-      if (deleted.acroform_pdf_path && fs.existsSync(resolveDataPath(deleted.acroform_pdf_path))) {
-        fs.unlinkSync(resolveDataPath(deleted.acroform_pdf_path));
-      }
-      const templateDir = path.join(config.dataPath, 'templates', deleted.id);
-      if (fs.existsSync(templateDir)) {
-        fs.rmSync(templateDir, { recursive: true, force: true });
-      }
+      if (deleted.source_pdf_path) await deleteObject(deleted.source_pdf_path);
+      await deleteObjectsWithPrefix(`templates/${deleted.id}/`);
     } catch {
-      // non-blocking filesystem cleanup
+      // non-blocking storage cleanup
     }
 
     ok(res, {
@@ -574,16 +595,15 @@ staffTemplatesRouter.post('/:id/import-acrofields', async (req, res) => {
     return;
   }
 
-  const pdfPath = resolveDataPath(template.source_pdf_path);
-  if (!fs.existsSync(pdfPath)) {
-    fail(res, 'NOT_FOUND', 'Source PDF file not found on disk', 404);
+  if (!(await objectExists(template.source_pdf_path))) {
+    fail(res, 'NOT_FOUND', 'Source PDF file not found', 404);
     return;
   }
 
   let plan;
   try {
-    const bytes = new Uint8Array(fs.readFileSync(pdfPath));
-    plan = await importEmbeddedAcroFieldsFromPdfBytes(bytes);
+    const buf = await getObjectBuffer(template.source_pdf_path);
+    plan = await importEmbeddedAcroFieldsFromPdfBytes(new Uint8Array(buf));
   } catch (error) {
     fail(res, 'IMPORT_FAILED', error instanceof Error ? error.message : 'Failed to read PDF form fields', 500);
     return;
@@ -652,27 +672,24 @@ staffTemplatesRouter.post('/:id/import-acrofields', async (req, res) => {
 staffTemplatesRouter.post('/:id/generate-acroform', async (req, res) => {
   try {
     const template = getTemplateWithFields(req.params.id, req.user!.practiceId) as any;
-    const outputDir = path.join(config.dataPath, 'templates', template.id);
-    fs.mkdirSync(outputDir, { recursive: true });
-    const outPath = path.join(outputDir, `acroform_v${template.version}.pdf`);
+    const outputKey = `templates/${template.id}/acroform_v${template.version}.pdf`;
 
-    await buildAcroformPdfFromFieldDefinitions({
-      sourcePdfPath: resolveDataPath(template.source_pdf_path),
-      outputPdfPath: outPath,
+    await generateAcroformPdf({
+      sourceKey: template.source_pdf_path,
+      outputKey,
       fields: template.fields,
       groups: template.groups ?? [],
     });
 
-    const relPath = toRelativeDataPath(outPath);
     const updated = setTemplateAcroformPath({
       templateId: template.id,
       practiceId: req.user!.practiceId,
-      acroformPdfPath: relPath,
+      acroformPdfPath: outputKey,
     });
 
     ok(res, {
       ...updated,
-      acroform_pdf_path: relPath,
+      acroform_pdf_path: outputKey,
     });
   } catch (error) {
     fail(res, 'ACROFORM_GENERATION_ERROR', (error as Error).message, 500);
@@ -712,7 +729,7 @@ staffTemplatesRouter.put('/:id/schema', (req, res) => {
   }
 });
 
-staffTemplatesRouter.post('/:id/publish', (req, res) => {
+staffTemplatesRouter.post('/:id/publish', async (req, res) => {
   try {
     let template = getTemplateById(req.params.id, req.user!.practiceId);
     if (!template) {
@@ -735,7 +752,7 @@ staffTemplatesRouter.post('/:id/publish', (req, res) => {
       }
 
       const fieldSchema = parseTemplateFieldSchema(template.field_schema_json);
-      if (!template.source_pdf_path || !fs.existsSync(resolveDataPath(template.source_pdf_path))) {
+      if (!template.source_pdf_path || !(await objectExists(template.source_pdf_path))) {
         fail(res, 'VALIDATION_ERROR', 'Upload the M-CHAT source PDF before publish', 422);
         return;
       }
@@ -748,7 +765,7 @@ staffTemplatesRouter.post('/:id/publish', (req, res) => {
         );
         return;
       }
-    } else if (!template.acroform_pdf_path || !fs.existsSync(resolveDataPath(template.acroform_pdf_path))) {
+    } else if (!template.acroform_pdf_path || !(await objectExists(template.acroform_pdf_path))) {
       fail(res, 'VALIDATION_ERROR', 'Generate AcroForm PDF before publish', 422);
       return;
     }
@@ -765,20 +782,20 @@ staffTemplatesRouter.post('/:id/publish', (req, res) => {
   }
 });
 
-staffTemplatesRouter.get('/:id/source', (req, res) => {
+staffTemplatesRouter.get('/:id/source', async (req, res) => {
   const template = getTemplateById(req.params.id, req.user!.practiceId);
   if (!template) {
     fail(res, 'NOT_FOUND', 'Template not found', 404);
     return;
   }
-  res.sendFile(resolveDataPath(template.source_pdf_path));
+  await streamObjectToResponse(template.source_pdf_path, res, { contentType: 'application/pdf' });
 });
 
-staffTemplatesRouter.get('/:id/acroform', (req, res) => {
+staffTemplatesRouter.get('/:id/acroform', async (req, res) => {
   const template = getTemplateById(req.params.id, req.user!.practiceId);
   if (!template?.acroform_pdf_path) {
     fail(res, 'NOT_FOUND', 'AcroForm PDF not available', 404);
     return;
   }
-  res.sendFile(resolveDataPath(template.acroform_pdf_path));
+  await streamObjectToResponse(template.acroform_pdf_path, res, { contentType: 'application/pdf' });
 });

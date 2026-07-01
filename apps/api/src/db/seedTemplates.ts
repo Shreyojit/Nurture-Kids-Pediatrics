@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { db, nowIso } from './database.js';
-import { config } from '../config.js';
+import { putObject } from '../lib/s3Storage.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -106,7 +106,7 @@ const PDF_FILES: Record<string, { source: string; acroform: string }> = {
   },
 };
 
-export function seedTemplates(): void {
+export async function seedTemplates(): Promise<void> {
   if (!fs.existsSync(DATA_FILE)) {
     console.warn('[seed] template seed skipped — DATA_FILE not found:', DATA_FILE);
     return;
@@ -137,6 +137,27 @@ export function seedTemplates(): void {
     fields: FieldRecord[];
     groups: GroupRecord[];
   };
+
+  // Upload the bundled PDFs to S3 first (async) — the DB writes below run inside a
+  // synchronous better-sqlite3 transaction, so no async work can happen there.
+  const templatePaths = new Map<string, { sourceRelPath: string; acroformRelPath: string }>();
+  for (const t of templates) {
+    const pdfs = PDF_FILES[t.id];
+    if (!pdfs) continue;
+
+    const sourceRelPath = `templates/source/${pdfs.source}`;
+    const acroformRelPath = `templates/${t.id}/acroform_v${t.version}.pdf`;
+    const bundledSource = path.join(PDFS_DIR, pdfs.source);
+    const bundledAcroform = path.join(PDFS_DIR, pdfs.acroform);
+
+    if (fs.existsSync(bundledSource)) {
+      await putObject(sourceRelPath, fs.readFileSync(bundledSource), 'application/pdf');
+    }
+    if (fs.existsSync(bundledAcroform)) {
+      await putObject(acroformRelPath, fs.readFileSync(bundledAcroform), 'application/pdf');
+    }
+    templatePaths.set(t.id, { sourceRelPath, acroformRelPath });
+  }
 
   // Templates: insert if new, then always update the PDF paths so swapped PDFs take effect
   const insertTemplate = db.prepare(`
@@ -179,26 +200,9 @@ export function seedTemplates(): void {
     let seededGroups = 0;
 
     for (const t of templates) {
-      const pdfs = PDF_FILES[t.id];
-      if (!pdfs) continue;
-
-      // Always copy PDFs and upsert the template row so new deploys pick up PDF changes.
-      const sourceDir = path.join(config.dataPath, 'templates', 'source');
-      const acroformDir = path.join(config.dataPath, 'templates', t.id);
-      fs.mkdirSync(sourceDir, { recursive: true });
-      fs.mkdirSync(acroformDir, { recursive: true });
-
-      const sourceRelPath = `templates/source/${pdfs.source}`;
-      const acroformRelPath = `templates/${t.id}/acroform_v${t.version}.pdf`;
-
-      const sourceDestPath = path.join(config.dataPath, sourceRelPath);
-      const acroformDestPath = path.join(config.dataPath, acroformRelPath);
-
-      const bundledSource = path.join(PDFS_DIR, pdfs.source);
-      const bundledAcroform = path.join(PDFS_DIR, pdfs.acroform);
-
-      if (fs.existsSync(bundledSource)) fs.copyFileSync(bundledSource, sourceDestPath);
-      if (fs.existsSync(bundledAcroform)) fs.copyFileSync(bundledAcroform, acroformDestPath);
+      const paths = templatePaths.get(t.id);
+      if (!paths) continue;
+      const { sourceRelPath, acroformRelPath } = paths;
 
       insertTemplate.run(
         t.id, practice.id, t.template_key, t.version, t.name,
